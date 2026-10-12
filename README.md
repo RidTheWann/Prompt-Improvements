@@ -60,6 +60,17 @@ AI mode memberi revisi semantik menggunakan model yang berjalan di komputermu. T
 Browser dapat memblokir permintaan lintas-origin. Ollama menerima origin lokal secara default; untuk situs publik, tambahkan origin situs ke `OLLAMA_ORIGINS` lalu restart Ollama. Gunakan hanya origin yang kamu percaya. Contoh untuk repo ini: `https://ridthewann.github.io` (origin tidak menyertakan `/Prompt-Improvements`). Lihat [panduan CORS resmi Ollama](https://github.com/ollama/ollama/blob/main/docs/faq.mdx#how-can-i-allow-additional-web-origins-to-access-ollama).
 
 Endpoint yang diterima UI dibatasi ke `localhost`, `127.0.0.1`, dan `::1`; alamat remote ditolak supaya prompt tidak tanpa sengaja dikirim ke layanan eksternal. Jika koneksi gagal, mode struktur deterministik tetap dapat digunakan.
+## Deploy to GitHub Pages
+
+The repository includes a static deployment workflow. One-time setup is required because GitHub does not expose the Pages publishing source through this chat integration:
+
+1. Open **Settings → Pages** in this repository.
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. The workflow will publish the static app after pushes to `main`; you can also run it manually from the Actions tab.
+
+Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
+
+The deployment contains only the app's static frontend files. Ollama remains local to the computer using AI mode; when accessing from GitHub Pages, configure `OLLAMA_ORIGINS` for `https://ridthewann.github.io` as described above.
 ## Roadmap
 
 - [x] Create a no-dependency, browser-based MVP foundation.
