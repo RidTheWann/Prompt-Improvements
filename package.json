@@ -1,0 +1,14 @@
+{
+  "name": "prompt-improvements",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first, zero-cost prompt structuring and iterative refinement workbench.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
