@@ -1,6 +1,8 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
+import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl } from "./ollama-client.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
+const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
 const MAX_HISTORY = 50;
 const $ = (id) => document.getElementById(id);
 
@@ -8,6 +10,8 @@ let savedVersions = loadHistory();
 let lastAnalysis = null;
 let iterationNotes = [];
 let toastTimer = null;
+let ollamaConfig = loadOllamaConfig();
+let ollamaModels = [];
 
 const fields = [
   "originalPrompt",
@@ -48,6 +52,170 @@ function loadHistory() {
     ).slice(0, MAX_HISTORY) : [];
   } catch {
     return [];
+  }
+}
+
+
+function loadOllamaConfig() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(OLLAMA_CONFIG_KEY) || "{}");
+    return { baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "http://localhost:11434", model: typeof stored.model === "string" ? stored.model : "" };
+  } catch {
+    return { baseUrl: "http://localhost:11434", model: "" };
+  }
+}
+
+function saveOllamaConfig() {
+  ollamaConfig = { baseUrl: $("ollamaEndpoint").value.trim() || "http://localhost:11434", model: $("ollamaModel").value.trim() };
+  try { localStorage.setItem(OLLAMA_CONFIG_KEY, JSON.stringify(ollamaConfig)); }
+  catch { showToast("Pengaturan Ollama tidak bisa disimpan oleh browser. Kamu tetap bisa melanjutkan sesi ini."); }
+}
+
+function setOllamaStatus(message, tone = "neutral") {
+  const status = $("ollamaStatus");
+  status.textContent = message;
+  status.dataset.tone = tone;
+}
+
+function populateOllamaModels(models, preferredModel = "") {
+  const select = $("ollamaModel");
+  select.replaceChildren();
+  ollamaModels = [...models];
+  if (models.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Tidak ada model terpasang";
+    select.append(option);
+    select.value = "";
+    return;
+  }
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    select.append(option);
+  }
+  select.value = models.includes(preferredModel) ? preferredModel : models[0];
+  ollamaConfig.model = select.value;
+}
+
+function initializeOllamaSettings() {
+  $("ollamaEndpoint").value = ollamaConfig.baseUrl;
+  if (ollamaConfig.model) {
+    const option = document.createElement("option");
+    option.value = ollamaConfig.model;
+    option.textContent = ollamaConfig.model + " (belum diverifikasi)";
+    $("ollamaModel").append(option);
+    $("ollamaModel").value = ollamaConfig.model;
+  }
+  updateEngineLabel();
+}
+
+function updateEngineLabel() {
+  const useOllama = $("engineMode").value === "ollama";
+  $("improveButtonText").textContent = useOllama ? "Sempurnakan dengan AI lokal" : "Perbaiki prompt";
+  if (useOllama) setOllamaStatus("Mode AI dipilih. Cek koneksi dan pilih model lokal terlebih dahulu.");
+  else if (ollamaModels.length > 0) setOllamaStatus(ollamaModels.length + " model lokal terdeteksi.", "success");
+  else setOllamaStatus("Mode struktur tetap bisa dipakai tanpa Ollama.");
+}
+
+async function checkOllamaConnection() {
+  const button = $("checkOllamaButton");
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Memeriksa...";
+  setOllamaStatus("Menghubungi server lokal...");
+  try {
+    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
+    const models = await listLocalModels(baseUrl);
+    ollamaConfig.baseUrl = baseUrl;
+    populateOllamaModels(models, ollamaConfig.model);
+    saveOllamaConfig();
+    if (models.length === 0) {
+      setOllamaStatus("Ollama terhubung, tetapi belum ada model. Unduh model melalui terminal terlebih dahulu.", "error");
+      showToast("Ollama terhubung, tetapi belum ada model lokal.");
+      return;
+    }
+    setOllamaStatus("Terhubung · " + models.length + " model lokal tersedia.", "success");
+    showToast("Koneksi berhasil. Pilih model untuk penyempurnaan AI lokal.");
+  } catch (error) {
+    setOllamaStatus(error instanceof Error ? error.message : "Koneksi Ollama gagal.", "error");
+    showToast(error instanceof Error ? error.message : "Koneksi Ollama gagal.");
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
+}
+
+async function runSelectedEngine() {
+  const originalPrompt = currentOriginal();
+  if (!originalPrompt) {
+    showToast("Isi prompt awal terlebih dahulu.");
+    $("originalPrompt").focus();
+    return;
+  }
+  const settings = readSettings();
+  const analysis = analyzePrompt(originalPrompt, settings);
+  let deterministicDraft;
+  try { deterministicDraft = buildImprovedPrompt({ originalPrompt, ...settings }); }
+  catch (error) {
+    showToast(error instanceof Error ? error.message : "Prompt tidak dapat disusun.");
+    return;
+  }
+  renderAnalysis(analysis);
+
+  if ($("engineMode").value !== "ollama") {
+    $("improvedPrompt").value = deterministicDraft;
+    updateWordCounts();
+    $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
+    showToast(iterationNotes.length
+      ? "Iterasi struktur diperbarui. Prompt awal dan seluruh catatan tetap dipertahankan."
+      : "Prompt terstruktur berhasil dibuat. Tinjau dan sesuaikan sebelum digunakan.");
+    return;
+  }
+
+  const previousOutput = $("improvedPrompt").value.trim();
+  const draftToImprove = iterationNotes.length > 0 && previousOutput ? previousOutput : deterministicDraft;
+  const button = $("improveButton");
+  const previousButtonLabel = $("improveButtonText").textContent;
+  let controller;
+  let timeoutId;
+  button.disabled = true;
+  $("improveButtonText").textContent = "AI lokal sedang bekerja...";
+  $("resultStatus").textContent = "Mengirim prompt ke model lokal...";
+  setOllamaStatus("Model sedang memproses di komputer ini. Waktu respons bergantung pada model dan perangkat.");
+  try {
+    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
+    const model = $("ollamaModel").value.trim();
+    if (!model || !ollamaModels.includes(model)) {
+      throw new Error("Cek koneksi dan pilih model yang terpasang sebelum memakai AI lokal.");
+    }
+    saveOllamaConfig();
+    controller = new AbortController();
+    timeoutId = window.setTimeout(() => controller.abort(), 240000);
+    const refinedPrompt = await improvePromptWithOllama({
+      baseUrl, model, originalPrompt, structuredDraft: draftToImprove, settings, signal: controller.signal
+    });
+    $("improvedPrompt").value = refinedPrompt;
+    $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI lokal selesai";
+    updateWordCounts();
+    setOllamaStatus("Selesai · prompt diproses oleh model lokal.", "success");
+    showToast("Prompt disempurnakan oleh AI lokal. Periksa hasil sebelum digunakan.");
+  } catch (error) {
+    $("resultStatus").textContent = "AI lokal gagal";
+    const message = error?.name === "AbortError"
+      ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
+      : error instanceof Error ? error.message : "AI lokal gagal menyempurnakan prompt.";
+    setOllamaStatus(message, "error");
+    if (!$("improvedPrompt").value.trim()) {
+      $("improvedPrompt").value = deterministicDraft;
+      updateWordCounts();
+    }
+    showToast(message);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+    button.disabled = false;
+    $("improveButtonText").textContent = previousButtonLabel;
   }
 }
 
@@ -398,8 +566,14 @@ function clearWorkspace() {
 $("originalPrompt").addEventListener("input", updateWordCounts);
 $("improvedPrompt").addEventListener("input", updateWordCounts);
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
-$("improveButton").addEventListener("click", () => {
-  if (buildCurrentPrompt()) showToast("Prompt terstruktur berhasil dibuat. Tinjau dan sesuaikan sebelum digunakan.");
+$("improveButton").addEventListener("click", runSelectedEngine);
+$("checkOllamaButton").addEventListener("click", checkOllamaConnection);
+$("engineMode").addEventListener("change", updateEngineLabel);
+$("ollamaModel").addEventListener("change", saveOllamaConfig);
+$("ollamaEndpoint").addEventListener("change", () => {
+  ollamaModels = [];
+  saveOllamaConfig();
+  setOllamaStatus("Alamat berubah. Cek koneksi kembali untuk memuat model.");
 });
 $("iterateButton").addEventListener("click", () => {
   const feedback = $("iterationFeedback").value.trim();
@@ -415,10 +589,7 @@ $("iterateButton").addEventListener("click", () => {
   }
   iterationNotes.push(feedback);
   $("iterationFeedback").value = "";
-  if (buildCurrentPrompt()) {
-    $("resultStatus").textContent = "Iterasi " + iterationNotes.length;
-    showToast("Iterasi diperbarui. Prompt awal dan feedback sebelumnya tetap dipertahankan.");
-  }
+  runSelectedEngine();
 });
 $("saveButton").addEventListener("click", createVersion);
 $("copyButton").addEventListener("click", copyPrompt);
@@ -440,6 +611,7 @@ $("historyList").addEventListener("click", (event) => {
 
 updateWordCounts();
 renderHistory();
+initializeOllamaSettings();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => {
