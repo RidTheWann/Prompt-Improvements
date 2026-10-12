@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101319">
+  <meta name="description" content="Workbench lokal untuk menyusun, menganalisis, dan menyempurnakan prompt secara iteratif tanpa API berbayar.">
+  <title>Prompt Improvements — Workbench</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./src/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Prompt Improvements beranda">
+        <span class="brand-mark" aria-hidden="true">P<span>+</span></span>
+        <span class="brand-copy">
+          <strong>Prompt Improvements</strong>
+          <small>Prompt engineering workbench</small>
+        </span>
+      </a>
+      <div class="topbar-status"><span class="status-dot"></span> Lokal · Tanpa API</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow"><span class="eyebrow-line"></span> BUILD BETTER INSTRUCTIONS</div>
+        <h1>Prompt biasa.<br><span>Instruksi yang lebih tajam.</span></h1>
+        <p>Ubah permintaan awal menjadi instruksi yang lebih jelas dan dapat dievaluasi. Perbaiki, uji, catat versi, lalu ulangi—tanpa API berbayar.</p>
+        <div class="hero-meta">
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Data tetap di browser</span>
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Analisis transparan</span>
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4"/><circle cx="10" cy="10" r="3.5"/></svg> Iterasi berkelanjutan</span>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Prompt workbench">
+        <section class="panel input-panel">
+          <div class="panel-heading">
+            <div>
+              <div class="section-kicker">01 / INPUT</div>
+              <h2>Prompt awal</h2>
+            </div>
+            <button id="resetButton" class="button button-quiet button-small" type="button">Mulai baru</button>
+          </div>
+          <label class="field-label" for="originalPrompt">Tulis prompt yang ingin diperbaiki <span class="required">*</span></label>
+          <textarea id="originalPrompt" class="textarea prompt-input" rows="6" placeholder="Contoh: Buat REST API untuk mengelola data pengguna dengan Python." spellcheck="true"></textarea>
+          <div class="input-foot"><span id="wordCount">0 kata</span><span id="inputHint">Mulai dari instruksi yang sudah kamu punya.</span></div>
+
+          <div class="form-divider"></div>
+          <div class="section-subhead">
+            <h3>Perjelas konteks</h3>
+            <p>Isi yang relevan saja. Jangan menambah konteks yang belum kamu ketahui.</p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="objective">Tujuan / hasil yang diinginkan <span class="optional">opsional</span></label>
+            <input id="objective" class="text-input" type="text" placeholder="Hasil akhir seperti apa yang dibutuhkan?">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="context">Konteks proyek atau masalah <span class="optional">opsional</span></label>
+            <textarea id="context" class="textarea" rows="3" placeholder="Informasi latar belakang, stack yang digunakan, kondisi saat ini..."></textarea>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="audience">Target audiens / pengguna <span class="optional">opsional</span></label>
+            <input id="audience" class="text-input" type="text" placeholder="Contoh: developer pemula, tim backend, pengguna umum">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="constraints">Batasan dan persyaratan <span class="optional">opsional</span></label>
+            <textarea id="constraints" class="textarea" rows="3" placeholder="Satu batasan per baris. Misalnya:&#10;Jangan gunakan dependency berbayar&#10;Pertahankan endpoint yang sudah ada"></textarea>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label class="field-label" for="outputFormat">Format keluaran</label>
+              <select id="outputFormat" class="text-input">
+                <option value="auto">Otomatis dari permintaan</option>
+                <option value="markdown">Markdown terstruktur</option>
+                <option value="json">JSON valid</option>
+                <option value="code">Kode + penjelasan singkat</option>
+                <option value="table">Tabel</option>
+                <option value="checklist">Checklist</option>
+                <option value="prose">Narasi / penjelasan</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label" for="successCriteria">Kriteria berhasil <span class="optional">opsional</span></label>
+              <input id="successCriteria" class="text-input" type="text" placeholder="Bagaimana hasil dinilai?">
+            </div>
+          </div>
+
+          <div class="form-divider"></div>
+          <div class="section-subhead">
+            <h3>Aturan penyempurnaan</h3>
+            <p>Aktifkan aturan yang sesuai dengan tugasmu.</p>
+          </div>
+          <div class="toggle-list">
+            <label class="toggle-row" for="ruleIntent">
+              <span><strong>Pertahankan maksud asli</strong><small>Jangan ubah tujuan tanpa alasan.</small></span>
+              <input id="ruleIntent" type="checkbox" checked>
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <label class="toggle-row" for="ruleGrounding">
+              <span><strong>Jangan mengarang fakta</strong><small>Tandai asumsi dan informasi yang belum tersedia.</small></span>
+              <input id="ruleGrounding" type="checkbox" checked>
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <label class="toggle-row" for="ruleReview">
+              <span><strong>Periksa sebelum finalisasi</strong><small>Cek kelengkapan dan konsistensi jawaban.</small></span>
+              <input id="ruleReview" type="checkbox" checked>
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <div class="primary-actions">
+            <button id="analyzeButton" class="button button-secondary" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4M6 8.5h5M8.5 6v5"/></svg>
+              Analisis prompt
+            </button>
+            <button id="improveButton" class="button button-primary" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 1.8 5.2L17 9l-5.2 1.8L10 16l-1.8-5.2L3 9l5.2-1.8L10 2Z"/><path d="m15.5 12.5.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg>
+              Perbaiki prompt
+            </button>
+          </div>
+          <p class="panel-footnote">Mesin awal memakai aturan deterministik. Ia memperjelas struktur, bukan menjamin kebenaran jawaban AI.</p>
+        </section>
+
+        <section class="panel output-panel" aria-label="Analisis dan hasil">
+          <div class="panel-heading">
+            <div>
+              <div class="section-kicker">02 / REFINE</div>
+              <h2>Analisis & hasil</h2>
+            </div>
+            <span id="resultStatus" class="status-chip">Menunggu input</span>
+          </div>
+
+          <div class="score-card">
+            <div class="score-topline">
+              <div>
+                <span class="muted-label">Kelengkapan struktur</span>
+                <div class="score-caption">Sinyal heuristik, bukan skor kebenaran</div>
+              </div>
+              <div class="score-number"><span id="scoreValue">—</span><small id="scoreSuffix">/100</small></div>
+            </div>
+            <div class="score-track"><div id="scoreBar" class="score-fill"></div></div>
+            <div id="scoreSummary" class="score-summary">Masukkan prompt, lalu jalankan analisis untuk melihat aspek yang perlu diperjelas.</div>
+          </div>
+
+          <div class="dimension-list" id="dimensionList" aria-live="polite">
+            <div class="empty-analysis">
+              <span class="empty-icon" aria-hidden="true">⌁</span>
+              <strong>Belum ada analisis</strong>
+              <span>Enam aspek akan muncul di sini setelah prompt dianalisis.</span>
+            </div>
+          </div>
+
+          <div class="result-divider"></div>
+          <div class="result-heading">
+            <div>
+              <h3>Prompt hasil penyempurnaan</h3>
+              <p>Hasil bisa kamu edit manual sebelum disalin atau disimpan.</p>
+            </div>
+            <span id="resultWordCount" class="count-chip">0 kata</span>
+          </div>
+          <textarea id="improvedPrompt" class="textarea result-textarea" rows="12" placeholder="Hasil terstruktur akan muncul di sini..." spellcheck="true" aria-label="Prompt hasil penyempurnaan"></textarea>
+
+          <div class="result-actions">
+            <button id="copyButton" class="button button-secondary" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H6"/></svg>
+              Salin
+            </button>
+            <button id="downloadButton" class="button button-secondary" type="button">Unduh .md</button>
+            <button id="saveButton" class="button button-primary" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 13v3h12v-3"/></svg>
+              Simpan versi
+            </button>
+            <button id="exportJsonButton" class="button button-quiet" type="button" aria-label="Ekspor versi sebagai JSON">JSON</button>
+          </div>
+
+          <div class="iteration-box">
+            <div class="iteration-title">
+              <span class="iteration-icon" aria-hidden="true">↻</span>
+              <div><h3>Iterasi berikutnya</h3><p>Catat kekurangan dari hasil tadi. Permintaan awal tetap dipertahankan.</p></div>
+            </div>
+            <label class="field-label" for="iterationFeedback">Feedback / perbaikan tambahan</label>
+            <textarea id="iterationFeedback" class="textarea" rows="3" placeholder="Contoh: tambahkan test case, batasi output maksimal 200 kata, jangan ubah API yang ada..."></textarea>
+            <button id="iterateButton" class="button button-secondary button-wide" type="button">Perbaiki lagi dengan feedback ini <span aria-hidden="true">↗</span></button>
+          </div>
+        </section>
+      </section>
+
+      <section class="history-section">
+        <div class="history-header">
+          <div>
+            <div class="section-kicker">03 / VERSIONING</div>
+            <h2>Riwayat iterasi</h2>
+            <p>Versi tersimpan pada browser ini saja. Riwayat tidak dikirim ke server.</p>
+          </div>
+          <span id="historyCount" class="count-chip">0 versi</span>
+        </div>
+        <div id="historyList" class="history-list">
+          <div class="history-empty"><span aria-hidden="true">◷</span><div><strong>Belum ada versi tersimpan</strong><p>Simpan hasil pertama untuk mulai membandingkan perjalanan perbaikannya.</p></div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand"><span class="brand-mark small-mark">P<span>+</span></span><span>Prompt Improvements</span></div>
+      <p>Gratis · Local-first · Tanpa API key</p>
+      <p class="footer-note">Analisis berbasis aturan. Uji prompt pada tugas nyata sebelum mengandalkannya di produksi.</p>
+    </footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

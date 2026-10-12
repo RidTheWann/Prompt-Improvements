@@ -1,0 +1,19 @@
+{
+  "name": "Prompt Improvements",
+  "short_name": "Prompt Improvements",
+  "description": "Local-first prompt engineering workbench",
+  "lang": "id",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101319",
+  "theme_color": "#101319",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
