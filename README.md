@@ -112,6 +112,10 @@ A higher pass rate only shows better performance on the checks you wrote. Avoid 
 - [x] Add an opt-in local Ollama adapter, loopback-only endpoint validation, model discovery, and clear privacy controls.
 - [x] Add validated JSON backup/restore for editor state, version history, local preferences, and regression cases.
 
+## CI action maintenance
+
+GitHub Actions used by CI and deployment are pinned to verified release commit SHAs rather than mutable major tags. Dependabot checks the GitHub Actions ecosystem weekly and opens update pull requests so these pins can be reviewed and kept current.
+
 ## Project principles
 
 - Local-first and free by default.
