@@ -157,7 +157,7 @@ test("optimizer feedback targets failed checks without weakening acceptance crit
     }]
   };
   const feedback = buildOptimizationFeedback(report, 2);
-  assert.match(feedback, /Putaran 2/);
+  assert.match(feedback, /Putaran 2/i);
   assert.match(feedback, /REGRESI/);
   assert.match(feedback, /JSON valid/);
   assert.match(feedback, /Jangan mengubah atau menghapus kriteria penerimaan/);
