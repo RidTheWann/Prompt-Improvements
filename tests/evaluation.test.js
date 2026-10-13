@@ -78,3 +78,10 @@ test("evaluation report keeps prompts and per-case outcomes exportable", () => {
   assert.equal(report.results[0].candidate.score, 100);
   assert.ok(report.limitations.length >= 2);
 });
+
+test("newline-delimited criteria stay as whole terms", () => {
+  const testCase = normalizeEvaluationCase({
+    name: "Newline terms", input: "sample", requiredText: "first phrase\\nsecond phrase"
+  });
+  assert.deepEqual(testCase.requiredText, ["first phrase", "second phrase"]);
+});

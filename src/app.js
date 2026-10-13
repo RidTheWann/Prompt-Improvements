@@ -247,7 +247,7 @@ function persistEvaluationCases() {
 }
 
 function splitEvaluationTerms(value) {
-  return String(value ?? "").split(/[\\n,]/).map((term) => term.trim()).filter(Boolean);
+  return String(value ?? "").split(/[\n,]/).map((term) => term.trim()).filter(Boolean);
 }
 
 function addEvaluationCase() {

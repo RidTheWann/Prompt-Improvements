@@ -1,6 +1,6 @@
 function splitTerms(value) {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
-  return String(value ?? "").split(/[\\n,]/).map((item) => item.trim()).filter(Boolean);
+  return String(value ?? "").split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
 }
 
 export function normalizeEvaluationCase(input = {}) {
@@ -47,7 +47,7 @@ export function normalizeEvaluationCase(input = {}) {
 
 function countWords(value) {
   const trimmed = String(value ?? "").trim();
-  return trimmed ? trimmed.split(/\\s+/).length : 0;
+  return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
 export function scoreEvaluationOutput(output, testCase) {
