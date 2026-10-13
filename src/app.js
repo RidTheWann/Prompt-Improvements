@@ -620,7 +620,7 @@ async function runAutomaticOptimization() {
     $("originalPrompt").focus();
     return;
   }
-  if (cases.length === 0) {
+  if (evaluationCases.length === 0) {
     showToast("Tambahkan test case terukur sebelum memulai optimasi otomatis.");
     $("evalCaseName").focus();
     return;

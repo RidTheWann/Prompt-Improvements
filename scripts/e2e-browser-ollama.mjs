@@ -171,6 +171,7 @@ try {
 
   await page.locator("#autoOptimizationIterations").selectOption("1");
   await page.locator("#autoOptimizeButton").click();
+  await page.waitForFunction(() => document.querySelector("#autoOptimizeButton")?.disabled === true, null, { timeout: 10_000 });
   await page.waitForFunction(() => {
     const start = document.querySelector("#autoOptimizeButton");
     const stop = document.querySelector("#stopOptimizationButton");
