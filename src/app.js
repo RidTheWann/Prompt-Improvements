@@ -1,6 +1,7 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
 import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl, runPromptTaskWithOllama } from "./ollama-client.js";
 import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
+import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "./optimizer.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
@@ -17,6 +18,7 @@ let ollamaConfig = loadOllamaConfig();
 let ollamaModels = [];
 let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
+let activeOptimizationController = null;
 
 const fields = [
   "originalPrompt",
@@ -460,6 +462,7 @@ async function runEvaluationSuite() {
   const originalLabel = button.textContent;
   let completed = [];
   button.disabled = true;
+  $("autoOptimizeButton").disabled = true;
   $("downloadEvaluationButton").disabled = true;
   $("evalRunStatus").textContent = "Memeriksa endpoint lokal dan model...";
   $("evalResultSummary").hidden = true;
@@ -517,8 +520,346 @@ async function runEvaluationSuite() {
     showToast(error instanceof Error ? error.message : "Evaluasi tidak dapat dimulai.");
   } finally {
     button.disabled = false;
+    $("autoOptimizeButton").disabled = false;
     button.textContent = originalLabel;
   }
+}
+
+
+async function withOptimizationRequestTimeout(parentSignal, request) {
+  const requestController = new AbortController();
+  const abortFromParent = () => requestController.abort();
+  if (parentSignal?.aborted) requestController.abort();
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+  const timeoutId = window.setTimeout(() => requestController.abort(), 180000);
+  try {
+    return await request(requestController.signal);
+  } finally {
+    window.clearTimeout(timeoutId);
+    parentSignal?.removeEventListener("abort", abortFromParent);
+  }
+}
+
+async function evaluatePromptAgainstSuite({ prompt, baselinePrompt, baselineResults, cases, baseUrl, model, signal, onProgress }) {
+  const baselineById = new Map(baselineResults.map((item) => [item.caseId, item]));
+  const results = [];
+  for (let index = 0; index < cases.length; index++) {
+    if (signal.aborted) throw new DOMException("Optimasi dihentikan.", "AbortError");
+    const item = cases[index];
+    onProgress?.("Menguji kandidat · " + (index + 1) + "/" + cases.length + ": " + item.name);
+    const baselineRecord = baselineById.get(item.id);
+    if (!baselineRecord?.baseline) throw new Error("Output baseline tidak tersedia untuk kasus: " + item.name);
+    const output = await withOptimizationRequestTimeout(signal, (requestSignal) => runPromptTaskWithOllama({
+      baseUrl, model, prompt, testInput: item.input, signal: requestSignal
+    }));
+    results.push({
+      caseId: item.id,
+      caseName: item.name,
+      baseline: baselineRecord.baseline,
+      candidate: scoreEvaluationOutput(output, item)
+    });
+  }
+  return createEvaluationReport({
+    evaluatedAt: new Date().toISOString(),
+    model,
+    baselinePrompt,
+    candidatePrompt: prompt,
+    results
+  });
+}
+
+function annotateOptimizationReport(report, maxIterations, attempts, stopReason) {
+  return createEvaluationReport({
+    evaluatedAt: report.evaluatedAt,
+    model: report.model,
+    baselinePrompt: report.baselinePrompt,
+    candidatePrompt: report.candidatePrompt,
+    results: report.results,
+    optimization: {
+      strategy: "guarded-local-search",
+      maxIterations,
+      attemptedIterations: Math.max(0, attempts.length - 1),
+      acceptedCandidates: attempts.filter((item) => item.iteration > 0 && item.accepted).length,
+      stopReason,
+      trials: attempts
+    }
+  });
+}
+
+function summarizeTrialReport(report) {
+  return {
+    baselinePass: report.summary.baselinePass,
+    candidatePass: report.summary.candidatePass,
+    regressions: report.summary.regressions,
+    baselineAverageScore: report.summary.baselineAverageScore,
+    candidateAverageScore: report.summary.candidateAverageScore,
+    failures: report.results.filter((item) => item.error || (item.candidate?.checks ?? []).some((check) => !check.passed)).map((item) => ({
+      caseName: item.caseName,
+      error: item.error ?? null,
+      failedChecks: (item.candidate?.checks ?? []).filter((check) => !check.passed).map((check) => ({ label: check.label, detail: check.detail }))
+    }))
+  };
+}
+
+function describeCandidateRank(report, prompt) {
+  const rank = rankOptimizationCandidate(report, prompt);
+  return {
+    regressions: rank.regressions,
+    passedCases: rank.passedCases,
+    totalCases: rank.totalCases,
+    averageScore: rank.averageScore,
+    wordCount: rank.wordCount
+  };
+}
+
+async function runAutomaticOptimization() {
+  if (activeOptimizationController) return;
+  const originalPrompt = currentOriginal();
+  if (!originalPrompt) {
+    showToast("Isi prompt awal sebelum memulai optimasi otomatis.");
+    $("originalPrompt").focus();
+    return;
+  }
+  if (evaluationCases.length === 0) {
+    showToast("Tambahkan test case terukur sebelum memulai optimasi otomatis.");
+    $("evalCaseName").focus();
+    return;
+  }
+
+  const settings = readSettings();
+  const cases = evaluationCases.map((item) => ({
+    ...item,
+    requiredText: [...item.requiredText],
+    forbiddenText: [...item.forbiddenText],
+    requiredKeys: [...item.requiredKeys]
+  }));
+  const maxIterations = Math.max(1, Math.min(3, Number.parseInt($("autoOptimizationIterations").value, 10) || 2));
+  let initialCandidate = $("improvedPrompt").value.trim();
+  if (!initialCandidate) {
+    try {
+      initialCandidate = buildImprovedPrompt({ originalPrompt, ...settings });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Prompt awal tidak dapat disusun.");
+      return;
+    }
+  }
+
+  const controller = new AbortController();
+  activeOptimizationController = controller;
+  const startButton = $("autoOptimizeButton");
+  const stopButton = $("stopOptimizationButton");
+  const evalButton = $("runEvaluationButton");
+  const improveButton = $("improveButton");
+  const iterateButton = $("iterateButton");
+  const saveButton = $("saveButton");
+  const exportButton = $("downloadEvaluationButton");
+  const addCaseButton = $("addEvalCaseButton");
+  const resetButton = $("resetButton");
+  const caseDeleteButtons = [...$("evalCaseList").querySelectorAll("button[data-eval-action='delete']")];
+  startButton.disabled = true;
+  evalButton.disabled = true;
+  improveButton.disabled = true;
+  iterateButton.disabled = true;
+  saveButton.disabled = true;
+  exportButton.disabled = true;
+  addCaseButton.disabled = true;
+  resetButton.disabled = true;
+  for (const button of caseDeleteButtons) button.disabled = true;
+  stopButton.hidden = false;
+  stopButton.disabled = false;
+  $("evalResultSummary").hidden = true;
+  $("evalResultList").replaceChildren();
+  $("autoOptimizerStatus").dataset.tone = "neutral";
+  $("autoOptimizerStatus").textContent = "Memeriksa Ollama dan menyiapkan baseline...";
+  $("evalRunStatus").textContent = "Optimasi otomatis: menyiapkan baseline dan " + cases.length + " test case.";
+
+  let bestPrompt = initialCandidate;
+  let bestReport = null;
+  let attempts = [];
+  let baselineResults = [];
+  let stopReason = "iteration_limit";
+
+  try {
+    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
+    const model = $("ollamaModel").value.trim();
+    const available = await listLocalModels(baseUrl, { signal: controller.signal });
+    if (!model || !ollamaModels.includes(model) || !available.includes(model)) {
+      throw new Error("Pilih dan verifikasi model Ollama yang terpasang sebelum menjalankan optimasi.");
+    }
+    saveOllamaConfig();
+
+    baselineResults = [];
+    for (let index = 0; index < cases.length; index++) {
+      if (controller.signal.aborted) throw new DOMException("Optimasi dihentikan.", "AbortError");
+      const item = evaluationCases[index];
+      $("autoOptimizerStatus").textContent = "Baseline " + (index + 1) + "/" + cases.length + ": " + item.name;
+      $("evalRunStatus").textContent = "Optimasi otomatis · menjalankan baseline " + (index + 1) + "/" + cases.length + ".";
+      const output = await withOptimizationRequestTimeout(controller.signal, (requestSignal) => runPromptTaskWithOllama({
+        baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: requestSignal
+      }));
+      baselineResults.push({
+        caseId: item.id,
+        caseName: item.name,
+        baseline: scoreEvaluationOutput(output, item)
+      });
+    }
+
+    bestReport = await evaluatePromptAgainstSuite({
+      prompt: bestPrompt,
+      baselinePrompt: originalPrompt,
+      baselineResults,
+      cases,
+      baseUrl,
+      model,
+      signal: controller.signal,
+      onProgress: (message) => { $("evalRunStatus").textContent = "Optimasi otomatis · " + message; }
+    });
+    const initialRank = describeCandidateRank(bestReport, bestPrompt);
+    attempts.push({
+      iteration: 0,
+      accepted: true,
+      reason: "Kandidat awal; digunakan sebagai baseline pencarian.",
+      prompt: bestPrompt,
+      rank: initialRank,
+      evaluation: summarizeTrialReport(bestReport)
+    });
+    latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, "searching");
+    renderEvaluationResults(latestEvaluationReport);
+    $("improvedPrompt").value = bestPrompt;
+    updateWordCounts();
+
+    if (hasMetOptimizationTarget(bestReport)) {
+      stopReason = "all_checks_passed";
+    } else {
+      for (let iteration = 1; iteration <= maxIterations; iteration++) {
+        if (controller.signal.aborted) throw new DOMException("Optimasi dihentikan.", "AbortError");
+        if (hasMetOptimizationTarget(bestReport)) {
+          stopReason = "all_checks_passed";
+          break;
+        }
+
+        $("autoOptimizerStatus").textContent = "Putaran " + iteration + "/" + maxIterations + ": menyusun kandidat dari kegagalan yang terukur...";
+        $("evalRunStatus").textContent = "Optimasi otomatis · meminta revisi kandidat " + iteration + "/" + maxIterations + ".";
+        const feedback = buildOptimizationFeedback(bestReport, iteration);
+        const promptSettings = {
+          ...settings,
+          iterationNotes: [...settings.iterationNotes, feedback]
+        };
+        const proposedPrompt = (await withOptimizationRequestTimeout(controller.signal, (requestSignal) => improvePromptWithOllama({
+          baseUrl,
+          model,
+          originalPrompt,
+          structuredDraft: bestPrompt,
+          settings: promptSettings,
+          signal: requestSignal
+        }))).trim();
+
+        if (!proposedPrompt || proposedPrompt === bestPrompt.trim()) {
+          attempts.push({
+            iteration,
+            accepted: false,
+            reason: "Model tidak menghasilkan perubahan prompt yang bermakna.",
+            prompt: proposedPrompt || "",
+            rank: null
+          });
+          stopReason = "candidate_unchanged";
+          break;
+        }
+
+        const proposedReport = await evaluatePromptAgainstSuite({
+          prompt: proposedPrompt,
+          baselinePrompt: originalPrompt,
+          baselineResults,
+          cases,
+          baseUrl,
+          model,
+          signal: controller.signal,
+          onProgress: (message) => {
+            $("evalRunStatus").textContent = "Putaran " + iteration + "/" + maxIterations + " · " + message;
+          }
+        });
+        const accepted = isCandidateBetter(proposedReport, proposedPrompt, bestReport, bestPrompt);
+        const rank = describeCandidateRank(proposedReport, proposedPrompt);
+        const reason = accepted
+          ? "Diterima: urutan kualitas meningkat tanpa mengubah kriteria tes."
+          : rank.regressions > describeCandidateRank(bestReport, bestPrompt).regressions
+            ? "Ditolak: kandidat menambah regresi terhadap baseline."
+            : rank.passedCases < describeCandidateRank(bestReport, bestPrompt).passedCases
+              ? "Ditolak: jumlah kasus yang lulus menurun."
+              : rank.averageScore < describeCandidateRank(bestReport, bestPrompt).averageScore
+                ? "Ditolak: skor kriteria terukur menurun."
+                : "Ditolak: tidak ada peningkatan terukur yang cukup untuk mengganti kandidat terbaik.";
+        attempts.push({ iteration, accepted, reason, prompt: proposedPrompt, rank, evaluation: summarizeTrialReport(proposedReport) });
+
+        if (accepted) {
+          bestPrompt = proposedPrompt;
+          bestReport = proposedReport;
+          $("improvedPrompt").value = bestPrompt;
+          updateWordCounts();
+          $("autoOptimizerStatus").textContent = "Putaran " + iteration + " diterima. " + rank.passedCases + "/" + rank.totalCases + " kasus lulus; " + rank.regressions + " regresi.";
+          latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, "searching");
+          renderEvaluationResults(latestEvaluationReport);
+        } else {
+          $("autoOptimizerStatus").textContent = "Putaran " + iteration + " ditolak. Kandidat terbaik sebelumnya tetap dipertahankan.";
+        }
+
+        if (hasMetOptimizationTarget(bestReport)) {
+          stopReason = "all_checks_passed";
+          break;
+        }
+      }
+    }
+
+    latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, stopReason);
+    renderEvaluationResults(latestEvaluationReport);
+    $("improvedPrompt").value = bestPrompt;
+    updateWordCounts();
+    const rank = describeCandidateRank(bestReport, bestPrompt);
+    const acceptedCount = attempts.filter((item) => item.iteration > 0 && item.accepted).length;
+    const finalStatus = controller.signal.aborted ? "Optimasi dihentikan" : "Optimasi selesai";
+    $("evalRunStatus").textContent = finalStatus + " · terbaik " + rank.passedCases + "/" + rank.totalCases + " kasus lulus, " + rank.regressions + " regresi, " + acceptedCount + " kandidat diterima.";
+    $("autoOptimizerStatus").dataset.tone = hasMetOptimizationTarget(bestReport) ? "success" : rank.regressions > 0 ? "error" : "neutral";
+    $("autoOptimizerStatus").textContent = (controller.signal.aborted ? "Dihentikan manual." : stopReason === "all_checks_passed" ? "Target tercapai; dihentikan lebih awal untuk menghemat waktu dan komputasi." : "Batas iterasi tercapai atau tidak ditemukan kandidat yang lebih baik.") + " Kandidat terbaik dipertahankan dan rincian setiap putaran disimpan pada laporan.";
+    showToast("Optimasi selesai. Kandidat terbaik dipertahankan berdasarkan kriteria test suite.");
+  } catch (error) {
+    const wasStopped = controller.signal.aborted;
+    stopReason = wasStopped ? "stopped_by_user" : "error";
+    if (bestReport) {
+      latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, stopReason);
+      renderEvaluationResults(latestEvaluationReport);
+      $("improvedPrompt").value = bestPrompt;
+      updateWordCounts();
+    }
+    const message = wasStopped
+      ? "Optimasi dihentikan. Kandidat terbaik yang sudah diuji tetap dipertahankan."
+      : error?.name === "AbortError"
+        ? "Permintaan model lokal melewati batas waktu. Kandidat terbaik yang sudah diuji tetap dipertahankan."
+        : error instanceof Error ? error.message : "Optimasi otomatis gagal.";
+    $("evalRunStatus").textContent = message;
+    $("autoOptimizerStatus").dataset.tone = wasStopped ? "neutral" : "error";
+    $("autoOptimizerStatus").textContent = message;
+    showToast(message);
+  } finally {
+    if (activeOptimizationController === controller) activeOptimizationController = null;
+    startButton.disabled = false;
+    evalButton.disabled = false;
+    improveButton.disabled = false;
+    iterateButton.disabled = false;
+    saveButton.disabled = false;
+    addCaseButton.disabled = false;
+    resetButton.disabled = false;
+    for (const button of $("evalCaseList").querySelectorAll("button[data-eval-action='delete']")) button.disabled = false;
+    stopButton.hidden = true;
+    stopButton.disabled = true;
+    exportButton.disabled = !latestEvaluationReport;
+  }
+}
+
+function stopAutomaticOptimization() {
+  if (!activeOptimizationController) return;
+  $("autoOptimizerStatus").textContent = "Menghentikan optimasi setelah permintaan aktif dibatalkan...";
+  $("stopOptimizationButton").disabled = true;
+  activeOptimizationController.abort();
 }
 
 function exportEvaluationReport() {
@@ -882,6 +1223,8 @@ $("improveButton").addEventListener("click", runSelectedEngine);
 $("checkOllamaButton").addEventListener("click", checkOllamaConnection);
 $("addEvalCaseButton").addEventListener("click", addEvaluationCase);
 $("runEvaluationButton").addEventListener("click", runEvaluationSuite);
+$("autoOptimizeButton").addEventListener("click", runAutomaticOptimization);
+$("stopOptimizationButton").addEventListener("click", stopAutomaticOptimization);
 $("downloadEvaluationButton").addEventListener("click", exportEvaluationReport);
 $("evalCaseList").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-eval-action=\"delete\"][data-id]");

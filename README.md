@@ -71,6 +71,15 @@ The repository includes a static deployment workflow. One-time setup is required
 Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
 
 The deployment contains only the app's static frontend files. Ollama remains local to the computer using AI mode; when accessing from GitHub Pages, configure `OLLAMA_ORIGINS` for `https://ridthewann.github.io` as described above.
+## Guarded automatic prompt optimization
+
+The **Optimasi iteratif otomatis** panel runs a bounded local search against the test cases you've written. It caches baseline outputs once per run, asks the local model to revise the best prompt using failed-check feedback, evaluates each proposal against the same baseline and criteria, and accepts it only when its rank improves. Ranking prioritizes fewer regressions, then more fully passing cases, then a higher average criteria score, then a shorter prompt. Acceptance criteria themselves are never altered.
+
+- Select 1–3 maximum candidate-generation rounds. The runner stops early when every case passes with no regression.
+- Use **Hentikan** to cancel active model work; the best candidate already evaluated remains in the editor.
+- The exported evaluation JSON includes each proposed prompt, rank, whether it was accepted, and the reason for rejection/acceptance.
+- Optimizing against a weak or unrepresentative suite can produce misleading results. Build diverse, realistic tests and retain human review for truthfulness, relevance, privacy, and nuanced semantics.
+
 ## Browser + real Ollama end-to-end tests
 
 Pull requests and pushes to `main` also run an end-to-end workflow in a clean Ubuntu runner. It installs Chromium through Playwright, installs Ollama, pulls the small `qwen2.5:0.5b` test model, starts the static app, and exercises the real browser-to-Ollama path. The scenario covers structural analysis, prompt generation, local version persistence, Markdown/JSON downloads, Ollama model discovery, real inference, regression A/B evaluation, evaluation-report JSON export, and iterative feedback.

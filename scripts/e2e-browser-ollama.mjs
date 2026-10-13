@@ -169,6 +169,28 @@ try {
   assert.ok(iterated.includes("Be explicit that the output must not contain Markdown."));
   console.log("[PASS] Iteration feedback is applied and preserved in the next prompt");
 
+  await page.locator("#autoOptimizationIterations").selectOption("1");
+  await page.locator("#autoOptimizeButton").click();
+  await page.waitForFunction(() => document.querySelector("#autoOptimizeButton")?.disabled === true, null, { timeout: 10_000 });
+  await page.waitForFunction(() => {
+    const start = document.querySelector("#autoOptimizeButton");
+    const stop = document.querySelector("#stopOptimizationButton");
+    return start && !start.disabled && stop?.hidden === true;
+  }, null, { timeout: 300_000 });
+  const optimizationStatus = (await page.locator("#evalRunStatus").textContent()) || "";
+  assert.ok(optimizationStatus.startsWith("Optimasi selesai"), "automatic optimizer finished with an error: " + optimizationStatus);
+  const [optimizedReportDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#downloadEvaluationButton").click()
+  ]);
+  const optimizedReport = JSON.parse(await readDownload(optimizedReportDownload));
+  assert.equal(optimizedReport.optimization?.strategy, "guarded-local-search");
+  assert.equal(optimizedReport.optimization?.maxIterations, 1);
+  assert.ok(Array.isArray(optimizedReport.optimization?.trials));
+  assert.ok(optimizedReport.optimization.trials.length >= 1);
+  assert.ok(optimizedReport.candidatePrompt, "the best prompt must remain available after optimization");
+  console.log("[PASS] Guarded automatic optimization evaluates candidates and exports its full trial history");
+
   assert.deepEqual(browserErrors, [], "browser must not raise uncaught JavaScript errors");
   await context.close();
   console.log("[PASS] No uncaught browser JavaScript errors");

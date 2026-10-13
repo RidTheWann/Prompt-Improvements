@@ -141,6 +141,7 @@ export function createEvaluationReport(options = {}) {
       candidate: item.candidate ?? null,
       error: item.error ?? null
     })),
+    optimization: options.optimization ?? null,
     limitations: [
       "Deterministic checks measure only the criteria configured for each test case; they do not establish factual correctness or overall semantic quality.",
       "Baseline and candidate were evaluated sequentially with the same local model; generation can still vary by model implementation.",

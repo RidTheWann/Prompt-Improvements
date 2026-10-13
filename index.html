@@ -284,10 +284,21 @@
             </div>
             <div class="evaluation-runbar">
               <div class="eval-run-copy"><strong>Perbandingan baseline vs revisi</strong><span id="evalRunStatus">Gunakan prompt hasil revisi dan cek koneksi Ollama sebelum mulai.</span></div>
-              <button id="runEvaluationButton" class="button button-primary" type="button">
+              <button id="runEvaluationButton" class="button button-secondary" type="button">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14M3 10h14M3 15.5h14"/><path d="m6 2 2.5 2.5L6 7M12 7l2.5 3-2.5 3M6 13l2.5 2.5L6 18"/></svg>
                 Jalankan evaluasi
               </button>
+            </div>
+            <div class="auto-optimizer-panel">
+              <div class="auto-optimizer-copy">
+                <div class="auto-optimizer-title"><span aria-hidden="true">↻</span><div><h3>Optimasi iteratif otomatis</h3><p>Model membuat kandidat, menjalankan suite yang sama, lalu hanya menerima revisi yang meningkatkan hasil tanpa menambah regresi.</p></div></div>
+                <p id="autoOptimizerStatus" class="auto-optimizer-status" role="status" aria-live="polite">Belum berjalan. Hasil akhir dan alasan penerimaan akan disertakan pada laporan JSON.</p>
+              </div>
+              <div class="auto-optimizer-actions">
+                <label class="auto-iteration-field" for="autoOptimizationIterations"><span>Putaran maksimum</span><select id="autoOptimizationIterations" class="text-input"><option value="1">1 putaran</option><option value="2" selected>2 putaran</option><option value="3">3 putaran</option></select></label>
+                <button id="autoOptimizeButton" class="button button-primary" type="button">Optimalkan otomatis</button>
+                <button id="stopOptimizationButton" class="button button-quiet" type="button" hidden disabled>Hentikan</button>
+              </div>
             </div>
             <div id="evalResultSummary" class="eval-result-summary" hidden></div>
             <div id="evalResultList" class="eval-result-list"></div>
