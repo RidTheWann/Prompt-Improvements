@@ -462,6 +462,7 @@ async function runEvaluationSuite() {
   const originalLabel = button.textContent;
   let completed = [];
   button.disabled = true;
+  $("autoOptimizeButton").disabled = true;
   $("downloadEvaluationButton").disabled = true;
   $("evalRunStatus").textContent = "Memeriksa endpoint lokal dan model...";
   $("evalResultSummary").hidden = true;
@@ -519,6 +520,7 @@ async function runEvaluationSuite() {
     showToast(error instanceof Error ? error.message : "Evaluasi tidak dapat dimulai.");
   } finally {
     button.disabled = false;
+    $("autoOptimizeButton").disabled = false;
     button.textContent = originalLabel;
   }
 }
@@ -584,6 +586,21 @@ function annotateOptimizationReport(report, maxIterations, attempts, stopReason)
   });
 }
 
+function summarizeTrialReport(report) {
+  return {
+    baselinePass: report.summary.baselinePass,
+    candidatePass: report.summary.candidatePass,
+    regressions: report.summary.regressions,
+    baselineAverageScore: report.summary.baselineAverageScore,
+    candidateAverageScore: report.summary.candidateAverageScore,
+    failures: report.results.filter((item) => item.error || (item.candidate?.checks ?? []).some((check) => !check.passed)).map((item) => ({
+      caseName: item.caseName,
+      error: item.error ?? null,
+      failedChecks: (item.candidate?.checks ?? []).filter((check) => !check.passed).map((check) => ({ label: check.label, detail: check.detail }))
+    }))
+  };
+}
+
 function describeCandidateRank(report, prompt) {
   const rank = rankOptimizationCandidate(report, prompt);
   return {
@@ -603,13 +620,19 @@ async function runAutomaticOptimization() {
     $("originalPrompt").focus();
     return;
   }
-  if (evaluationCases.length === 0) {
+  if (cases.length === 0) {
     showToast("Tambahkan test case terukur sebelum memulai optimasi otomatis.");
     $("evalCaseName").focus();
     return;
   }
 
   const settings = readSettings();
+  const cases = evaluationCases.map((item) => ({
+    ...item,
+    requiredText: [...item.requiredText],
+    forbiddenText: [...item.forbiddenText],
+    requiredKeys: [...item.requiredKeys]
+  }));
   const maxIterations = Math.max(1, Math.min(3, Number.parseInt($("autoOptimizationIterations").value, 10) || 2));
   let initialCandidate = $("improvedPrompt").value.trim();
   if (!initialCandidate) {
@@ -630,19 +653,25 @@ async function runAutomaticOptimization() {
   const iterateButton = $("iterateButton");
   const saveButton = $("saveButton");
   const exportButton = $("downloadEvaluationButton");
+  const addCaseButton = $("addEvalCaseButton");
+  const resetButton = $("resetButton");
+  const caseDeleteButtons = [...$("evalCaseList").querySelectorAll("button[data-eval-action='delete']")];
   startButton.disabled = true;
   evalButton.disabled = true;
   improveButton.disabled = true;
   iterateButton.disabled = true;
   saveButton.disabled = true;
   exportButton.disabled = true;
+  addCaseButton.disabled = true;
+  resetButton.disabled = true;
+  for (const button of caseDeleteButtons) button.disabled = true;
   stopButton.hidden = false;
   stopButton.disabled = false;
   $("evalResultSummary").hidden = true;
   $("evalResultList").replaceChildren();
   $("autoOptimizerStatus").dataset.tone = "neutral";
   $("autoOptimizerStatus").textContent = "Memeriksa Ollama dan menyiapkan baseline...";
-  $("evalRunStatus").textContent = "Optimasi otomatis: menyiapkan baseline dan " + evaluationCases.length + " test case.";
+  $("evalRunStatus").textContent = "Optimasi otomatis: menyiapkan baseline dan " + cases.length + " test case.";
 
   let bestPrompt = initialCandidate;
   let bestReport = null;
@@ -660,11 +689,11 @@ async function runAutomaticOptimization() {
     saveOllamaConfig();
 
     baselineResults = [];
-    for (let index = 0; index < evaluationCases.length; index++) {
+    for (let index = 0; index < cases.length; index++) {
       if (controller.signal.aborted) throw new DOMException("Optimasi dihentikan.", "AbortError");
       const item = evaluationCases[index];
-      $("autoOptimizerStatus").textContent = "Baseline " + (index + 1) + "/" + evaluationCases.length + ": " + item.name;
-      $("evalRunStatus").textContent = "Optimasi otomatis · menjalankan baseline " + (index + 1) + "/" + evaluationCases.length + ".";
+      $("autoOptimizerStatus").textContent = "Baseline " + (index + 1) + "/" + cases.length + ": " + item.name;
+      $("evalRunStatus").textContent = "Optimasi otomatis · menjalankan baseline " + (index + 1) + "/" + cases.length + ".";
       const output = await withOptimizationRequestTimeout(controller.signal, (requestSignal) => runPromptTaskWithOllama({
         baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: requestSignal
       }));
@@ -679,7 +708,7 @@ async function runAutomaticOptimization() {
       prompt: bestPrompt,
       baselinePrompt: originalPrompt,
       baselineResults,
-      cases: evaluationCases,
+      cases,
       baseUrl,
       model,
       signal: controller.signal,
@@ -691,7 +720,8 @@ async function runAutomaticOptimization() {
       accepted: true,
       reason: "Kandidat awal; digunakan sebagai baseline pencarian.",
       prompt: bestPrompt,
-      rank: initialRank
+      rank: initialRank,
+      evaluation: summarizeTrialReport(bestReport)
     });
     latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, "searching");
     renderEvaluationResults(latestEvaluationReport);
@@ -740,7 +770,7 @@ async function runAutomaticOptimization() {
           prompt: proposedPrompt,
           baselinePrompt: originalPrompt,
           baselineResults,
-          cases: evaluationCases,
+          cases,
           baseUrl,
           model,
           signal: controller.signal,
@@ -759,7 +789,7 @@ async function runAutomaticOptimization() {
               : rank.averageScore < describeCandidateRank(bestReport, bestPrompt).averageScore
                 ? "Ditolak: skor kriteria terukur menurun."
                 : "Ditolak: tidak ada peningkatan terukur yang cukup untuk mengganti kandidat terbaik.";
-        attempts.push({ iteration, accepted, reason, prompt: proposedPrompt, rank });
+        attempts.push({ iteration, accepted, reason, prompt: proposedPrompt, rank, evaluation: summarizeTrialReport(proposedReport) });
 
         if (accepted) {
           bestPrompt = proposedPrompt;
@@ -788,7 +818,7 @@ async function runAutomaticOptimization() {
     const acceptedCount = attempts.filter((item) => item.iteration > 0 && item.accepted).length;
     const finalStatus = controller.signal.aborted ? "Optimasi dihentikan" : "Optimasi selesai";
     $("evalRunStatus").textContent = finalStatus + " · terbaik " + rank.passedCases + "/" + rank.totalCases + " kasus lulus, " + rank.regressions + " regresi, " + acceptedCount + " kandidat diterima.";
-    $("autoOptimizerStatus").dataset.tone = rank.regressions === 0 ? "success" : "error";
+    $("autoOptimizerStatus").dataset.tone = hasMetOptimizationTarget(bestReport) ? "success" : rank.regressions > 0 ? "error" : "neutral";
     $("autoOptimizerStatus").textContent = (controller.signal.aborted ? "Dihentikan manual." : stopReason === "all_checks_passed" ? "Target tercapai; dihentikan lebih awal untuk menghemat waktu dan komputasi." : "Batas iterasi tercapai atau tidak ditemukan kandidat yang lebih baik.") + " Kandidat terbaik dipertahankan dan rincian setiap putaran disimpan pada laporan.";
     showToast("Optimasi selesai. Kandidat terbaik dipertahankan berdasarkan kriteria test suite.");
   } catch (error) {
@@ -814,6 +844,9 @@ async function runAutomaticOptimization() {
     improveButton.disabled = false;
     iterateButton.disabled = false;
     saveButton.disabled = false;
+    addCaseButton.disabled = false;
+    resetButton.disabled = false;
+    for (const button of $("evalCaseList").querySelectorAll("button[data-eval-action='delete']")) button.disabled = false;
     stopButton.hidden = true;
     stopButton.disabled = true;
     exportButton.disabled = !latestEvaluationReport;

@@ -70,5 +70,5 @@ export function buildOptimizationFeedback(report, iteration, options = {}) {
     }
   }
   lines.push("Jangan mengubah atau menghapus kriteria penerimaan. Kembalikan hanya prompt yang telah direvisi.");
-  return lines.join("\\n").slice(0, 6000);
+  return lines.join("\n").slice(0, 6000);
 }

@@ -294,3 +294,5 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .auto-optimizer-actions { grid-template-columns: minmax(0, 1fr); }
   .auto-iteration-field { grid-column: auto; }
 }
+
+[hidden] { display: none !important; }

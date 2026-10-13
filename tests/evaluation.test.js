@@ -162,3 +162,17 @@ test("optimizer feedback targets failed checks without weakening acceptance crit
   assert.match(feedback, /JSON valid/);
   assert.match(feedback, /Jangan mengubah atau menghapus kriteria penerimaan/);
 });
+
+test("optimizer feedback uses actual line breaks and is bounded", async () => {
+  const { buildOptimizationFeedback } = await import("../src/optimizer.js");
+  const feedback = buildOptimizationFeedback({
+    results: [{
+      caseName: "Strict JSON",
+      baseline: { passed: true },
+      candidate: { passed: false, checks: [{ passed: false, label: "JSON valid", detail: "Parse failed" }] }
+    }]
+  }, 2);
+  assert.ok(feedback.includes("\nOPTIMASI PROMPT OTOMATIS"), "feedback should contain separated sections");
+  assert.ok(!feedback.includes("\\nOPTIMASI"), "feedback must not have literal slash-n separators");
+  assert.ok(feedback.length <= 6000);
+});
