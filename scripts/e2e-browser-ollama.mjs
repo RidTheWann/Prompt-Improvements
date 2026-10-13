@@ -171,7 +171,13 @@ try {
 
   await page.locator("#autoOptimizationIterations").selectOption("1");
   await page.locator("#autoOptimizeButton").click();
-  await waitForText(page, "#evalRunStatus", "Optimasi selesai", 600_000);
+  await page.waitForFunction(() => {
+    const start = document.querySelector("#autoOptimizeButton");
+    const stop = document.querySelector("#stopOptimizationButton");
+    return start && !start.disabled && stop?.hidden === true;
+  }, null, { timeout: 300_000 });
+  const optimizationStatus = (await page.locator("#evalRunStatus").textContent()) || "";
+  assert.ok(optimizationStatus.startsWith("Optimasi selesai"), "automatic optimizer finished with an error: " + optimizationStatus);
   const [optimizedReportDownload] = await Promise.all([
     page.waitForEvent("download"),
     page.locator("#downloadEvaluationButton").click()

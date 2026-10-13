@@ -531,7 +531,7 @@ async function withOptimizationRequestTimeout(parentSignal, request) {
   const abortFromParent = () => requestController.abort();
   if (parentSignal?.aborted) requestController.abort();
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
-  const timeoutId = window.setTimeout(() => requestController.abort(), 240000);
+  const timeoutId = window.setTimeout(() => requestController.abort(), 180000);
   try {
     return await request(requestController.signal);
   } finally {
@@ -822,7 +822,7 @@ async function runAutomaticOptimization() {
     $("autoOptimizerStatus").textContent = (controller.signal.aborted ? "Dihentikan manual." : stopReason === "all_checks_passed" ? "Target tercapai; dihentikan lebih awal untuk menghemat waktu dan komputasi." : "Batas iterasi tercapai atau tidak ditemukan kandidat yang lebih baik.") + " Kandidat terbaik dipertahankan dan rincian setiap putaran disimpan pada laporan.";
     showToast("Optimasi selesai. Kandidat terbaik dipertahankan berdasarkan kriteria test suite.");
   } catch (error) {
-    const wasStopped = controller.signal.aborted || error?.name === "AbortError";
+    const wasStopped = controller.signal.aborted;
     stopReason = wasStopped ? "stopped_by_user" : "error";
     if (bestReport) {
       latestEvaluationReport = annotateOptimizationReport(bestReport, maxIterations, attempts, stopReason);
@@ -832,7 +832,9 @@ async function runAutomaticOptimization() {
     }
     const message = wasStopped
       ? "Optimasi dihentikan. Kandidat terbaik yang sudah diuji tetap dipertahankan."
-      : error instanceof Error ? error.message : "Optimasi otomatis gagal.";
+      : error?.name === "AbortError"
+        ? "Permintaan model lokal melewati batas waktu. Kandidat terbaik yang sudah diuji tetap dipertahankan."
+        : error instanceof Error ? error.message : "Optimasi otomatis gagal.";
     $("evalRunStatus").textContent = message;
     $("autoOptimizerStatus").dataset.tone = wasStopped ? "neutral" : "error";
     $("autoOptimizerStatus").textContent = message;
