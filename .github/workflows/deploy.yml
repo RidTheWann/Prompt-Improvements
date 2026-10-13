@@ -32,7 +32,7 @@ jobs:
         run: |
           mkdir -p dist/src
           cp index.html styles.css manifest.webmanifest icon.svg service-worker.js dist/
-          cp src/app.js src/prompt-engine.js src/ollama-client.js dist/src/
+          cp src/app.js src/prompt-engine.js src/ollama-client.js src/evaluation.js dist/src/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
