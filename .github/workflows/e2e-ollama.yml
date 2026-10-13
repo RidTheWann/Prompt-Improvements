@@ -2,7 +2,7 @@ name: Browser and local Ollama end-to-end
 
 on:
   push:
-    branches: [main]
+    branches: [main, "test/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
