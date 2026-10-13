@@ -1,6 +1,6 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
 import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl, runPromptTaskWithOllama } from "./ollama-client.js";
-import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport } from "./evaluation.js";
+import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
@@ -527,7 +527,7 @@ function exportEvaluationReport() {
     return;
   }
   const filename = "prompt-evaluation-" + new Date().toISOString().slice(0, 10) + ".json";
-  downloadFile(filename, JSON.stringify(latestEvaluationReport, null, 2) + "\\n", "application/json;charset=utf-8");
+  downloadFile(filename, serializeEvaluationReport(latestEvaluationReport), "application/json;charset=utf-8");
   showToast("Laporan evaluasi JSON siap diunduh.");
 }
 

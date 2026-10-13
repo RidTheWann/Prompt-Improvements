@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport } from "../src/evaluation.js";
+import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "../src/evaluation.js";
 
 test("test cases require actionable input and at least one measurable criterion", () => {
   assert.throws(() => normalizeEvaluationCase({ name: "", input: "data", requiredText: ["ok"] }), /Nama test case wajib/);
@@ -84,4 +84,14 @@ test("newline-delimited criteria stay as whole terms", () => {
     name: "Newline terms", input: "sample", requiredText: "first phrase\nsecond phrase"
   });
   assert.deepEqual(testCase.requiredText, ["first phrase", "second phrase"]);
+});
+
+test("evaluation report serialization emits parseable JSON with a final newline", () => {
+  const report = createEvaluationReport({
+    model: "local-model",
+    results: [{ caseId: "case-1", caseName: "Serialize", baseline: { score: 50, passed: false }, candidate: { score: 100, passed: true } }]
+  });
+  const serialized = serializeEvaluationReport(report);
+  assert.ok(serialized.endsWith("\n"));
+  assert.doesNotThrow(() => JSON.parse(serialized));
 });
