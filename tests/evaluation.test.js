@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport } from "../src/evaluation.js";
+import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "../src/evaluation.js";
 
 test("test cases require actionable input and at least one measurable criterion", () => {
   assert.throws(() => normalizeEvaluationCase({ name: "", input: "data", requiredText: ["ok"] }), /Nama test case wajib/);
