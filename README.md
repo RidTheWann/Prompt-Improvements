@@ -71,6 +71,12 @@ The repository includes a static deployment workflow. One-time setup is required
 Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
 
 The deployment contains only the app's static frontend files. Ollama remains local to the computer using AI mode; when accessing from GitHub Pages, configure `OLLAMA_ORIGINS` for `https://ridthewann.github.io` as described above.
+## Browser + real Ollama end-to-end tests
+
+Pull requests and pushes to `main` also run an end-to-end workflow in a clean Ubuntu runner. It installs Chromium through Playwright, installs Ollama, pulls the small `qwen2.5:0.5b` test model, starts the static app, and exercises the real browser-to-Ollama path. The scenario covers structural analysis, prompt generation, local version persistence, Markdown/JSON downloads, Ollama model discovery, real inference, regression A/B evaluation, evaluation-report JSON export, and iterative feedback.
+
+The E2E job uses a downloaded local model; it does not call a paid model API. It requires more time than unit tests because the model must be downloaded and run. Unit/integration tests remain available with `npm test`.
+
 ## Regression evaluation
 
 After creating a prompt revision, add test cases that represent real tasks your prompt must handle. Each case can verify required phrases, forbidden phrases, valid JSON, required JSON keys, and a maximum word count. The suite runs the original and revised prompt against the same input and the same locally installed Ollama model, then reports pass rates, changed cases, and per-check output.
