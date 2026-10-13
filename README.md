@@ -71,12 +71,23 @@ The repository includes a static deployment workflow. One-time setup is required
 Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
 
 The deployment contains only the app's static frontend files. Ollama remains local to the computer using AI mode; when accessing from GitHub Pages, configure `OLLAMA_ORIGINS` for `https://ridthewann.github.io` as described above.
+## Regression evaluation
+
+After creating a prompt revision, add test cases that represent real tasks your prompt must handle. Each case can verify required phrases, forbidden phrases, valid JSON, required JSON keys, and a maximum word count. The suite runs the original and revised prompt against the same input and the same locally installed Ollama model, then reports pass rates, changed cases, and per-check output.
+
+1. Start Ollama and select a model in the workbench.
+2. Add two or more representative test cases where practical. Use synthetic or sanitized inputs for private data.
+3. Generate a revised prompt, open **Regression Tests**, and click **Jalankan evaluasi**.
+4. Inspect both outputs and failed checks; export the report as JSON for a versioned record.
+
+A higher pass rate only shows better performance on the checks you wrote. Avoid criteria that merely reward verbosity or one exact wording when multiple answers could be correct. Factuality, usefulness, safety, and nuanced semantics still need human review. Test cases are stored in the browser's local storage; evaluation outputs remain in the page session unless you export them.
+
 ## Roadmap
 
 - [x] Create a no-dependency, browser-based MVP foundation.
 - [x] Add explainable heuristic analysis and iterative version history.
 - [x] Add automated tests and CI.
-- [ ] Add task-specific evaluation cases and regression comparison.
+- [x] Add task-specific local A/B evaluation cases and regression comparison.
 - [x] Add an opt-in local Ollama adapter, loopback-only endpoint validation, model discovery, and clear privacy controls.
 - [ ] Add import/export of complete workspaces.
 

@@ -225,10 +225,84 @@
         </section>
       </section>
 
+      <section class="evaluation-section">
+        <div class="evaluation-header">
+          <div>
+            <div class="section-kicker">03 / REGRESSION TESTS</div>
+            <h2>Uji apakah prompt benar-benar membaik</h2>
+            <p>Jalankan prompt awal dan hasil revisi pada input identik dengan model lokal yang sama. Penilaian otomatis memeriksa kriteria yang kamu tetapkan.</p>
+          </div>
+          <span class="local-ai-tag"><span class="status-dot"></span> Ollama lokal</span>
+        </div>
+
+        <div class="evaluation-layout">
+          <section class="panel evaluation-editor">
+            <div class="section-subhead">
+              <h3>Buat test case</h3>
+              <p>Gunakan contoh input representatif dari tugasmu. Kriteria harus relevan dengan permintaan itu.</p>
+            </div>
+            <div class="field">
+              <label class="field-label" for="evalCaseName">Nama test case <span class="required">*</span></label>
+              <input id="evalCaseName" class="text-input" placeholder="Contoh: Ringkasan laporan 1 halaman" maxlength="120">
+            </div>
+            <div class="field">
+              <label class="field-label" for="evalInput">Input uji / data contoh <span class="required">*</span></label>
+              <textarea id="evalInput" class="textarea" rows="5" placeholder="Data yang akan diproses oleh prompt. Gunakan contoh sintetis bila data asli bersifat rahasia."></textarea>
+            </div>
+            <div class="field">
+              <label class="field-label" for="evalRequired">Output harus mengandung <span class="optional">opsional · pisahkan dengan koma/baris baru</span></label>
+              <textarea id="evalRequired" class="textarea" rows="2" placeholder="Istilah/teks yang wajib muncul pada output"></textarea>
+            </div>
+            <div class="field">
+              <label class="field-label" for="evalForbidden">Output tidak boleh mengandung <span class="optional">opsional</span></label>
+              <textarea id="evalForbidden" class="textarea" rows="2" placeholder="Istilah/teks yang tidak boleh muncul"></textarea>
+            </div>
+            <label class="toggle-row eval-json-toggle" for="evalRequireJson">
+              <span><strong>Wajib JSON valid</strong><small>Memastikan output dapat diparse sebagai JSON.</small></span>
+              <input id="evalRequireJson" type="checkbox">
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <div class="field">
+              <label class="field-label" for="evalRequiredKeys">Key JSON wajib <span class="optional">opsional · pisahkan dengan koma</span></label>
+              <input id="evalRequiredKeys" class="text-input" placeholder="misalnya: summary, risks, next_steps">
+            </div>
+            <div class="field">
+              <label class="field-label" for="evalMaxWords">Batas kata maksimum <span class="optional">opsional</span></label>
+              <input id="evalMaxWords" class="text-input" type="number" min="1" max="10000" step="1" placeholder="Contoh: 200">
+            </div>
+            <button id="addEvalCaseButton" class="button button-secondary button-wide" type="button">Tambah test case</button>
+            <p class="panel-footnote">Tambahkan minimal satu kriteria yang dapat diperiksa. Pemeriksaan otomatis tidak menggantikan review manusia terhadap akurasi atau kualitas semantik.</p>
+          </section>
+
+          <section class="panel evaluation-suite">
+            <div class="panel-heading">
+              <div><div class="section-kicker">TEST SUITE</div><h2>Kasus evaluasi</h2></div>
+              <span id="evalCaseCount" class="count-chip">0 kasus</span>
+            </div>
+            <div id="evalCaseList" class="eval-case-list">
+              <div class="history-empty"><span aria-hidden="true">◎</span><div><strong>Suite masih kosong</strong><p>Buat test case pertama yang sesuai dengan tugas prompt kamu.</p></div></div>
+            </div>
+            <div class="evaluation-runbar">
+              <div class="eval-run-copy"><strong>Perbandingan baseline vs revisi</strong><span id="evalRunStatus">Gunakan prompt hasil revisi dan cek koneksi Ollama sebelum mulai.</span></div>
+              <button id="runEvaluationButton" class="button button-primary" type="button">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14M3 10h14M3 15.5h14"/><path d="m6 2 2.5 2.5L6 7M12 7l2.5 3-2.5 3M6 13l2.5 2.5L6 18"/></svg>
+                Jalankan evaluasi
+              </button>
+            </div>
+            <div id="evalResultSummary" class="eval-result-summary" hidden></div>
+            <div id="evalResultList" class="eval-result-list"></div>
+            <div class="result-actions eval-export-row">
+              <button id="downloadEvaluationButton" class="button button-secondary" type="button" disabled>Ekspor hasil JSON</button>
+              <span class="panel-footnote">Test case disimpan di browser ini. Hasil run tidak tersimpan permanen kecuali diekspor.</span>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="history-section">
         <div class="history-header">
           <div>
-            <div class="section-kicker">03 / VERSIONING</div>
+            <div class="section-kicker">04 / VERSIONING</div>
             <h2>Riwayat iterasi</h2>
             <p>Versi tersimpan pada browser ini saja. Riwayat tidak dikirim ke server.</p>
           </div>

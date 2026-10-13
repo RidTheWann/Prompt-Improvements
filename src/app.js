@@ -1,8 +1,11 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
-import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl } from "./ollama-client.js";
+import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl, runPromptTaskWithOllama } from "./ollama-client.js";
+import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport } from "./evaluation.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
+const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
+const MAX_EVAL_CASES = 20;
 const MAX_HISTORY = 50;
 const $ = (id) => document.getElementById(id);
 
@@ -12,6 +15,8 @@ let iterationNotes = [];
 let toastTimer = null;
 let ollamaConfig = loadOllamaConfig();
 let ollamaModels = [];
+let evaluationCases = loadEvaluationCases();
+let latestEvaluationReport = null;
 
 const fields = [
   "originalPrompt",
@@ -217,6 +222,313 @@ async function runSelectedEngine() {
     button.disabled = false;
     $("improveButtonText").textContent = previousButtonLabel;
   }
+}
+
+
+function loadEvaluationCases() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EVAL_CASES_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.slice(0, MAX_EVAL_CASES).map((item) => normalizeEvaluationCase(item)).map((item, index) => ({
+      ...item,
+      id: raw[index]?.id || makeId()
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function persistEvaluationCases() {
+  try {
+    localStorage.setItem(EVAL_CASES_KEY, JSON.stringify(evaluationCases));
+  } catch {
+    showToast("Browser tidak dapat menyimpan test case. Ekspor hasil atau kurangi jumlah data.");
+  }
+}
+
+function splitEvaluationTerms(value) {
+  return String(value ?? "").split(/[\\n,]/).map((term) => term.trim()).filter(Boolean);
+}
+
+function addEvaluationCase() {
+  if (evaluationCases.length >= MAX_EVAL_CASES) {
+    showToast("Maksimal " + MAX_EVAL_CASES + " test case. Hapus kasus yang tidak dipakai untuk menambah yang baru.");
+    return;
+  }
+  try {
+    const item = normalizeEvaluationCase({
+      id: makeId(),
+      name: $("evalCaseName").value,
+      input: $("evalInput").value,
+      requiredText: splitEvaluationTerms($("evalRequired").value),
+      forbiddenText: splitEvaluationTerms($("evalForbidden").value),
+      requireJson: $("evalRequireJson").checked,
+      requiredKeys: splitEvaluationTerms($("evalRequiredKeys").value),
+      maxWords: $("evalMaxWords").value || null
+    });
+    item.id = makeId();
+    if (evaluationCases.some((existing) => existing.name.toLocaleLowerCase() === item.name.toLocaleLowerCase())) {
+      throw new Error("Nama test case sudah digunakan. Gunakan nama yang unik.");
+    }
+    evaluationCases.push(item);
+    persistEvaluationCases();
+    renderEvaluationCases();
+    $("evalCaseName").value = "";
+    $("evalInput").value = "";
+    $("evalRequired").value = "";
+    $("evalForbidden").value = "";
+    $("evalRequireJson").checked = false;
+    $("evalRequiredKeys").value = "";
+    $("evalMaxWords").value = "";
+    showToast("Test case disimpan secara lokal.");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "Test case tidak dapat ditambahkan.");
+  }
+}
+
+function renderEvaluationCases() {
+  const list = $("evalCaseList");
+  list.replaceChildren();
+  $("evalCaseCount").textContent = evaluationCases.length + (evaluationCases.length === 1 ? " kasus" : " kasus");
+  if (evaluationCases.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "◎";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = "Suite masih kosong";
+    const description = document.createElement("p");
+    description.textContent = "Buat test case pertama yang sesuai dengan tugas prompt kamu.";
+    copy.append(title, description);
+    empty.append(icon, copy);
+    list.append(empty);
+    return;
+  }
+
+  for (const item of evaluationCases) {
+    const card = document.createElement("article");
+    card.className = "eval-case-card";
+    const head = document.createElement("div");
+    head.className = "eval-case-card-head";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = item.name;
+    const preview = document.createElement("p");
+    preview.textContent = item.input.slice(0, 220) + (item.input.length > 220 ? "…" : "");
+    copy.append(title, preview);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "eval-case-remove";
+    remove.textContent = "Hapus";
+    remove.dataset.evalAction = "delete";
+    remove.dataset.id = item.id;
+    remove.setAttribute("aria-label", "Hapus test case " + item.name);
+    head.append(copy, remove);
+    const chips = document.createElement("div");
+    chips.className = "eval-case-rules";
+    const rules = [];
+    if (item.requireJson) rules.push("JSON valid");
+    if (item.requiredKeys.length) rules.push(item.requiredKeys.length + " key wajib");
+    if (item.requiredText.length) rules.push(item.requiredText.length + " teks wajib");
+    if (item.forbiddenText.length) rules.push(item.forbiddenText.length + " teks terlarang");
+    if (item.maxWords !== null) rules.push("maks. " + item.maxWords + " kata");
+    for (const rule of rules) {
+      const chip = document.createElement("span");
+      chip.className = "eval-rule-chip";
+      chip.textContent = rule;
+      chips.append(chip);
+    }
+    card.append(head, chips);
+    list.append(card);
+  }
+}
+
+function appendCheckList(target, result) {
+  const list = document.createElement("ul");
+  list.className = "eval-check-list";
+  for (const check of (result?.checks ?? [])) {
+    const item = document.createElement("li");
+    if (check.passed) item.className = "ok";
+    item.textContent = check.label + " — " + check.detail;
+    list.append(item);
+  }
+  target.append(list);
+}
+
+function appendOutputDetails(target, label, output) {
+  if (!output) return;
+  const details = document.createElement("details");
+  details.className = "eval-output-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "Lihat output model: " + label;
+  const pre = document.createElement("pre");
+  pre.textContent = output;
+  details.append(summary, pre);
+  target.append(details);
+}
+
+function renderEvaluationResults(report) {
+  const summaryBox = $("evalResultSummary");
+  const list = $("evalResultList");
+  list.replaceChildren();
+  summaryBox.hidden = false;
+  const s = report.summary;
+  summaryBox.replaceChildren();
+  const main = document.createElement("div");
+  main.textContent = "Baseline lulus " + s.baselinePass + "/" + s.totalCases +
+    " kasus (rata-rata " + (s.baselineAverageScore ?? "—") + "%); revisi lulus " +
+    s.candidatePass + "/" + s.totalCases + " kasus (rata-rata " +
+    (s.candidateAverageScore ?? "—") + "%).";
+  const delta = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = "Perubahan pass rate: " + (s.passRateDelta > 0 ? "+" : "") + s.passRateDelta + " poin persentase.";
+  delta.append(strong);
+  const regressions = document.createElement("div");
+  regressions.textContent = "Regresi: " + s.regressions + " · Perbaikan kasus: " + s.improvements + ".";
+  summaryBox.append(main, delta, regressions);
+
+  for (const item of report.results) {
+    const card = document.createElement("article");
+    card.className = "eval-result-card";
+    const head = document.createElement("div");
+    head.className = "eval-result-head";
+    const title = document.createElement("strong");
+    title.textContent = item.caseName;
+    const badge = document.createElement("span");
+    const candidatePass = item.candidate?.passed === true;
+    badge.className = "eval-result-badge " + (candidatePass ? "pass" : "fail");
+    badge.textContent = item.error ? "ERROR" : candidatePass ? "LULUS" : "PERLU DITINJAU";
+    head.append(title, badge);
+    const body = document.createElement("div");
+    body.className = "eval-result-body";
+
+    if (item.error) {
+      const error = document.createElement("div");
+      error.className = "eval-error";
+      error.textContent = item.error;
+      body.append(error);
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "eval-comparison";
+      for (const [label, result] of [["Baseline", item.baseline], ["Prompt revisi", item.candidate]]) {
+        const side = document.createElement("section");
+        side.className = "eval-side";
+        const sideHead = document.createElement("div");
+        sideHead.className = "eval-side-head";
+        const name = document.createElement("span");
+        name.textContent = label;
+        const score = document.createElement("span");
+        score.className = "eval-side-score";
+        score.textContent = (result?.score ?? "—") + "%";
+        sideHead.append(name, score);
+        const content = document.createElement("div");
+        content.className = "eval-side-content";
+        appendCheckList(content, result);
+        appendOutputDetails(content, label, result?.output);
+        side.append(sideHead, content);
+        grid.append(side);
+      }
+      body.append(grid);
+    }
+    card.append(head, body);
+    list.append(card);
+  }
+  $("downloadEvaluationButton").disabled = report.results.length === 0;
+}
+
+async function runEvaluationSuite() {
+  const originalPrompt = currentOriginal();
+  const candidatePrompt = $("improvedPrompt").value.trim();
+  if (!originalPrompt) {
+    showToast("Isi prompt awal terlebih dahulu.");
+    $("originalPrompt").focus();
+    return;
+  }
+  if (!candidatePrompt) {
+    showToast("Susun prompt hasil revisi sebelum membandingkannya.");
+    $("improvedPrompt").focus();
+    return;
+  }
+  if (evaluationCases.length === 0) {
+    showToast("Tambahkan setidaknya satu test case terlebih dahulu.");
+    $("evalCaseName").focus();
+    return;
+  }
+  const button = $("runEvaluationButton");
+  const originalLabel = button.textContent;
+  let completed = [];
+  button.disabled = true;
+  $("downloadEvaluationButton").disabled = true;
+  $("evalRunStatus").textContent = "Memeriksa endpoint lokal dan model...";
+  $("evalResultSummary").hidden = true;
+  $("evalResultList").replaceChildren();
+
+  try {
+    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
+    const model = $("ollamaModel").value.trim();
+    const available = await listLocalModels(baseUrl);
+    if (!model || !available.includes(model)) {
+      throw new Error("Model belum diverifikasi atau tidak lagi tersedia. Klik Cek koneksi & model pada panel engine.");
+    }
+
+    for (let index = 0; index < evaluationCases.length; index++) {
+      const item = evaluationCases[index];
+      $("evalRunStatus").textContent = "Kasus " + (index + 1) + "/" + evaluationCases.length + ": " + item.name + " · menjalankan baseline dan revisi...";
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 240000);
+      try {
+        let baseline;
+        let candidate;
+        try {
+          const output = await runPromptTaskWithOllama({ baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: controller.signal });
+          baseline = scoreEvaluationOutput(output, item);
+        } catch (error) {
+          throw new Error("Baseline gagal: " + (error?.name === "AbortError" ? "waktu eksekusi habis." : error.message));
+        }
+        try {
+          const output = await runPromptTaskWithOllama({ baseUrl, model, prompt: candidatePrompt, testInput: item.input, signal: controller.signal });
+          candidate = scoreEvaluationOutput(output, item);
+        } catch (error) {
+          throw new Error("Prompt revisi gagal: " + (error?.name === "AbortError" ? "waktu eksekusi habis." : error.message));
+        }
+        completed.push({ caseId: item.id, caseName: item.name, baseline, candidate });
+      } catch (error) {
+        completed.push({ caseId: item.id, caseName: item.name, baseline: null, candidate: null, error: error instanceof Error ? error.message : "Evaluasi gagal." });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    latestEvaluationReport = createEvaluationReport({
+      evaluatedAt: new Date().toISOString(),
+      model,
+      baselinePrompt: originalPrompt,
+      candidatePrompt,
+      results: completed
+    });
+    renderEvaluationResults(latestEvaluationReport);
+    const succeeded = completed.filter((item) => item.baseline && item.candidate).length;
+    $("evalRunStatus").textContent = "Selesai · " + succeeded + "/" + completed.length + " kasus berhasil dibandingkan.";
+    showToast("Evaluasi selesai. Periksa regresi dan output model sebelum menyimpulkan revisi lebih baik.");
+  } catch (error) {
+    $("evalRunStatus").textContent = error instanceof Error ? error.message : "Evaluasi tidak dapat dimulai.";
+    showToast(error instanceof Error ? error.message : "Evaluasi tidak dapat dimulai.");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+function exportEvaluationReport() {
+  if (!latestEvaluationReport) {
+    showToast("Jalankan evaluasi terlebih dahulu.");
+    return;
+  }
+  const filename = "prompt-evaluation-" + new Date().toISOString().slice(0, 10) + ".json";
+  downloadFile(filename, JSON.stringify(latestEvaluationReport, null, 2) + "\\n", "application/json;charset=utf-8");
+  showToast("Laporan evaluasi JSON siap diunduh.");
 }
 
 function persistHistory() {
@@ -568,6 +880,17 @@ $("improvedPrompt").addEventListener("input", updateWordCounts);
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
 $("improveButton").addEventListener("click", runSelectedEngine);
 $("checkOllamaButton").addEventListener("click", checkOllamaConnection);
+$("addEvalCaseButton").addEventListener("click", addEvaluationCase);
+$("runEvaluationButton").addEventListener("click", runEvaluationSuite);
+$("downloadEvaluationButton").addEventListener("click", exportEvaluationReport);
+$("evalCaseList").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-eval-action=\"delete\"][data-id]");
+  if (!button) return;
+  evaluationCases = evaluationCases.filter((item) => item.id !== button.dataset.id);
+  persistEvaluationCases();
+  renderEvaluationCases();
+  showToast("Test case dihapus dari suite lokal.");
+});
 $("engineMode").addEventListener("change", updateEngineLabel);
 $("ollamaModel").addEventListener("change", saveOllamaConfig);
 $("ollamaEndpoint").addEventListener("change", () => {
@@ -612,6 +935,7 @@ $("historyList").addEventListener("click", (event) => {
 updateWordCounts();
 renderHistory();
 initializeOllamaSettings();
+renderEvaluationCases();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => {

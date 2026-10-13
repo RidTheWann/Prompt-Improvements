@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./src/app.js",
   "./src/prompt-engine.js",
   "./src/ollama-client.js",
+  "./src/evaluation.js",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
