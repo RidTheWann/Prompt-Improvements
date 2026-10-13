@@ -1,6 +1,6 @@
 function wordCount(value) {
   const text = String(value ?? "").trim();
-  return text ? text.split(/\\s+/).length : 0;
+  return text ? text.split(/\s+/).length : 0;
 }
 
 export function rankOptimizationCandidate(report, prompt = "") {

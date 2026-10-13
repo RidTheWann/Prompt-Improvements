@@ -172,7 +172,7 @@ test("optimizer feedback uses actual line breaks and is bounded", async () => {
       candidate: { passed: false, checks: [{ passed: false, label: "JSON valid", detail: "Parse failed" }] }
     }]
   }, 2);
-  assert.ok(feedback.includes("\nOPTIMASI PROMPT OTOMATIS"), "feedback should contain separated sections");
+  assert.ok(feedback.startsWith("OPTIMASI PROMPT OTOMATIS") && feedback.includes("\nGunakan hasil pengujian"), "feedback should contain separated sections");
   assert.ok(!feedback.includes("\\nOPTIMASI"), "feedback must not have literal slash-n separators");
   assert.ok(feedback.length <= 6000);
 });
