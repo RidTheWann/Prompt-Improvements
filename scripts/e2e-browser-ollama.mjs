@@ -123,7 +123,8 @@ try {
 
   await page.locator("#evalCaseName").fill("Strict JSON contract");
   await page.locator("#evalInput").fill("Synthetic report: release completed successfully; zero warnings; no unresolved issues.");
-  await page.locator("#evalRequireJson").check();
+  await page.locator('label[for="evalRequireJson"]').click();
+  assert.equal(await page.locator("#evalRequireJson").isChecked(), true, "JSON toggle label must activate the checkbox");
   await page.locator("#evalRequiredKeys").fill("summary, risks");
   await page.locator("#evalMaxWords").fill("100");
   await page.locator("#addEvalCaseButton").click();
