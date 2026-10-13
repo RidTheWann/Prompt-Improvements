@@ -95,3 +95,70 @@ test("evaluation report serialization emits parseable JSON with a final newline"
   assert.ok(serialized.endsWith("\n"));
   assert.doesNotThrow(() => JSON.parse(serialized));
 });
+
+import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "../src/optimizer.js";
+
+function sampleReport({ baselinePass = 0, candidatePass = 0, regressions = 0, average = 0, total = 2 } = {}) {
+  const results = Array.from({ length: total }, (_, index) => ({
+    caseName: "Case " + index,
+    baseline: { passed: index < baselinePass, score: index < baselinePass ? 100 : 0, checks: [] },
+    candidate: {
+      passed: index < candidatePass,
+      score: index < candidatePass ? 100 : average,
+      checks: [{ id: "check", label: "Required contract", passed: index < candidatePass, detail: index < candidatePass ? "OK" : "Missing required output" }],
+      output: "test"
+    }
+  }));
+  return {
+    candidatePrompt: "candidate",
+    summary: { regressions, candidatePass, candidateAverageScore: average },
+    results
+  };
+}
+
+test("optimizer ranks full valid reports and rejects incomplete evaluations", () => {
+  const valid = sampleReport({ baselinePass: 1, candidatePass: 1, average: 70 });
+  const rank = rankOptimizationCandidate(valid, "one two three");
+  assert.equal(rank.valid, true);
+  assert.equal(rank.regressions, 0);
+  assert.equal(rank.passedCases, 1);
+  assert.equal(rank.wordCount, 3);
+  assert.equal(rankOptimizationCandidate({ results: [] }, "prompt").valid, false);
+});
+
+test("optimizer prefers fewer regressions before maximizing passes", () => {
+  const clean = sampleReport({ baselinePass: 1, candidatePass: 1, regressions: 0, average: 50 });
+  const regressed = sampleReport({ baselinePass: 1, candidatePass: 2, regressions: 1, average: 100 });
+  assert.equal(isCandidateBetter(clean, "a clean candidate", regressed, "a regressed candidate"), true);
+});
+
+test("optimizer prefers more passing cases and then higher scores without regressions", () => {
+  const fewerPasses = sampleReport({ baselinePass: 0, candidatePass: 1, regressions: 0, average: 50 });
+  const morePasses = sampleReport({ baselinePass: 0, candidatePass: 2, regressions: 0, average: 40 });
+  const lowerAverage = sampleReport({ baselinePass: 0, candidatePass: 2, regressions: 0, average: 60 });
+  assert.equal(isCandidateBetter(morePasses, "stronger prompt", fewerPasses, "weaker prompt"), true);
+  assert.equal(isCandidateBetter(lowerAverage, "stronger prompt v2", morePasses, "stronger prompt"), true);
+  assert.equal(isCandidateBetter(morePasses, "same prompt", morePasses, "same prompt"), false);
+});
+
+test("optimizer stops early when every case passes without regression", () => {
+  const done = sampleReport({ baselinePass: 1, candidatePass: 2, regressions: 0, average: 100 });
+  assert.equal(hasMetOptimizationTarget(done), true);
+  const regression = sampleReport({ baselinePass: 2, candidatePass: 2, regressions: 1, average: 100 });
+  assert.equal(hasMetOptimizationTarget(regression), false);
+});
+
+test("optimizer feedback targets failed checks without weakening acceptance criteria", () => {
+  const report = {
+    results: [{
+      caseName: "Strict JSON",
+      baseline: { passed: true },
+      candidate: { passed: false, checks: [{ passed: false, label: "JSON valid", detail: "Parse failed" }] }
+    }]
+  };
+  const feedback = buildOptimizationFeedback(report, 2);
+  assert.match(feedback, /Putaran 2/);
+  assert.match(feedback, /REGRESI/);
+  assert.match(feedback, /JSON valid/);
+  assert.match(feedback, /Jangan mengubah atau menghapus kriteria penerimaan/);
+});
