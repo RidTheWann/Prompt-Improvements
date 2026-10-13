@@ -85,3 +85,13 @@ test("newline-delimited criteria stay as whole terms", () => {
   });
   assert.deepEqual(testCase.requiredText, ["first phrase", "second phrase"]);
 });
+
+test("evaluation report serialization emits parseable JSON with a final newline", () => {
+  const report = createEvaluationReport({
+    model: "local-model",
+    results: [{ caseId: "case-1", caseName: "Serialize", baseline: { score: 50, passed: false }, candidate: { score: 100, passed: true } }]
+  });
+  const serialized = serializeEvaluationReport(report);
+  assert.ok(serialized.endsWith("\n"));
+  assert.doesNotThrow(() => JSON.parse(serialized));
+});

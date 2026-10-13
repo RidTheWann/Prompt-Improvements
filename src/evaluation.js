@@ -148,3 +148,7 @@ export function createEvaluationReport(options = {}) {
     ]
   };
 }
+
+export function serializeEvaluationReport(report) {
+  return JSON.stringify(report, null, 2) + "\n";
+}
