@@ -317,8 +317,14 @@
             <h2>Riwayat iterasi</h2>
             <p>Versi tersimpan pada browser ini saja. Riwayat tidak dikirim ke server.</p>
           </div>
-          <span id="historyCount" class="count-chip">0 versi</span>
+          <div class="workspace-backup-actions">
+            <span id="historyCount" class="count-chip">0 versi</span>
+            <button id="exportWorkspaceButton" class="button button-secondary button-small" type="button">Ekspor backup</button>
+            <button id="importWorkspaceButton" class="button button-quiet button-small" type="button">Impor backup</button>
+            <input id="workspaceImportFile" type="file" accept=".json,application/json" hidden>
+          </div>
         </div>
+        <p id="workspaceTransferStatus" class="workspace-transfer-status" role="status" aria-live="polite">Backup mencakup editor, pengaturan, riwayat versi, dan test case; ekspor laporan evaluasi secara terpisah bila dibutuhkan.</p>
         <div id="historyList" class="history-list">
           <div class="history-empty"><span aria-hidden="true">◷</span><div><strong>Belum ada versi tersimpan</strong><p>Simpan hasil pertama untuk mulai membandingkan perjalanan perbaikannya.</p></div></div>
         </div>

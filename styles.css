@@ -296,3 +296,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 
 [hidden] { display: none !important; }
+
+.workspace-backup-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.workspace-backup-actions .button { white-space: nowrap; }
+.workspace-transfer-status { margin: -8px 0 14px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+@media (max-width: 680px) {
+  .history-header { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .workspace-backup-actions { width: 100%; justify-content: flex-start; }
+  .workspace-backup-actions .count-chip { margin-right: auto; }
+}

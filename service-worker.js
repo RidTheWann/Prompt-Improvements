@@ -1,4 +1,4 @@
-const CACHE_NAME = "prompt-improvements-v2";
+const CACHE_NAME = "prompt-improvements-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./src/ollama-client.js",
   "./src/evaluation.js",
   "./src/optimizer.js",
+  "./src/workspace.js",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
