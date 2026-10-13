@@ -2,6 +2,7 @@ import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./promp
 import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl, runPromptTaskWithOllama } from "./ollama-client.js";
 import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
 import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "./optimizer.js";
+import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS } from "./workspace.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
@@ -862,6 +863,134 @@ function stopAutomaticOptimization() {
   activeOptimizationController.abort();
 }
 
+
+function createCurrentWorkspaceBackup() {
+  const workspaceFields = Object.fromEntries(fields.map((id) => [id, $(id).value]));
+  workspaceFields.improvedPrompt = $("improvedPrompt").value;
+  return createWorkspaceBackup({
+    workspace: {
+      fields: workspaceFields,
+      safeguards: {
+        preserveIntent: $("ruleIntent").checked,
+        avoidFabrication: $("ruleGrounding").checked,
+        review: $("ruleReview").checked
+      },
+      iterationNotes: [...iterationNotes],
+      engine: {
+        mode: $("engineMode").value,
+        model: $("ollamaModel").value.trim(),
+        endpoint: normalizeOllamaBaseUrl($("ollamaEndpoint").value)
+      }
+    },
+    history: savedVersions,
+    evaluationCases
+  });
+}
+
+function exportWorkspaceBackup() {
+  try {
+    const backup = createCurrentWorkspaceBackup();
+    const date = new Date().toISOString().slice(0, 10);
+    downloadFile("prompt-improvements-workspace-" + date + ".json", JSON.stringify(backup, null, 2) + "\n", "application/json;charset=utf-8");
+    $("workspaceTransferStatus").textContent = "Backup berhasil dibuat. Simpan file di tempat aman; semua data kerja termasuk prompt ada di dalamnya.";
+    showToast("Backup workspace berhasil dibuat.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Workspace tidak dapat diekspor.";
+    $("workspaceTransferStatus").textContent = "Ekspor gagal: " + message;
+    showToast(message);
+  }
+}
+
+function applyWorkspaceBackup(backup) {
+  const storageKeys = [STORAGE_KEY, EVAL_CASES_KEY, OLLAMA_CONFIG_KEY];
+  const previous = new Map(storageKeys.map((key) => [key, localStorage.getItem(key)]));
+  const next = new Map([
+    [STORAGE_KEY, JSON.stringify(backup.history)],
+    [EVAL_CASES_KEY, JSON.stringify(backup.evaluationCases)],
+    [OLLAMA_CONFIG_KEY, JSON.stringify({ baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model })]
+  ]);
+  try {
+    for (const [key, value] of next) localStorage.setItem(key, value);
+  } catch (error) {
+    for (const [key, value] of previous) {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch {
+        // Best-effort rollback if the browser has exhausted its storage quota.
+      }
+    }
+    throw new Error("Browser gagal menyimpan backup; perubahan dibatalkan. " + (error instanceof Error ? error.message : ""));
+  }
+
+  savedVersions = backup.history;
+  evaluationCases = backup.evaluationCases;
+  iterationNotes = [...backup.workspace.iterationNotes];
+  ollamaConfig = { baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model };
+  ollamaModels = [];
+  for (const id of fields) $(id).value = backup.workspace.fields[id] ?? "";
+  $("improvedPrompt").value = backup.workspace.fields.improvedPrompt ?? "";
+  $("ruleIntent").checked = backup.workspace.safeguards.preserveIntent;
+  $("ruleGrounding").checked = backup.workspace.safeguards.avoidFabrication;
+  $("ruleReview").checked = backup.workspace.safeguards.review;
+  $("iterationFeedback").value = "";
+  $("engineMode").value = backup.workspace.engine.mode;
+  $("ollamaEndpoint").value = backup.workspace.engine.endpoint;
+  const modelSelect = $("ollamaModel");
+  if (ollamaConfig.model) {
+    let option = [...modelSelect.options].find((item) => item.value === ollamaConfig.model);
+    if (!option) {
+      option = document.createElement("option");
+      option.value = ollamaConfig.model;
+      option.textContent = ollamaConfig.model + " (belum diverifikasi)";
+      modelSelect.append(option);
+    }
+    modelSelect.value = ollamaConfig.model;
+  } else {
+    modelSelect.value = "";
+  }
+
+  latestEvaluationReport = null;
+  renderHistory();
+  renderEvaluationCases();
+  $("evalResultSummary").hidden = true;
+  $("evalResultList").replaceChildren();
+  $("downloadEvaluationButton").disabled = true;
+  $("evalRunStatus").textContent = "Workspace dipulihkan. Jalankan evaluasi lagi untuk memeriksa prompt dan test case ini.";
+  if (currentOriginal()) {
+    lastAnalysis = analyzePrompt(currentOriginal(), readSettings());
+    renderAnalysis(lastAnalysis);
+  } else {
+    lastAnalysis = null;
+    $("scoreValue").textContent = "—";
+    $("scoreBar").style.width = "0%";
+    $("dimensionList").replaceChildren();
+  }
+  updateWordCounts();
+  updateEngineLabel();
+  $("resultStatus").textContent = "Workspace dipulihkan";
+}
+
+async function importWorkspaceFile(file) {
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024 || file.size > MAX_WORKSPACE_FILE_CHARS) {
+    throw new Error("File backup melebihi batas 2 MiB.");
+  }
+  const backup = parseWorkspaceBackup(await file.text());
+  const confirmed = window.confirm(
+    "Pulihkan backup ini? Data editor, pengaturan, riwayat versi, dan test case saat ini akan diganti.\n\n" +
+    backup.history.length + " versi · " + backup.evaluationCases.length + " test case · diekspor " +
+    new Date(backup.exportedAt).toLocaleString() + ".\n\nEkspor data saat ini dahulu jika masih diperlukan."
+  );
+  if (!confirmed) {
+    $("workspaceTransferStatus").textContent = "Impor dibatalkan. Workspace saat ini tidak diubah.";
+    return;
+  }
+  applyWorkspaceBackup(backup);
+  $("workspaceTransferStatus").textContent = "Backup berhasil dipulihkan · " + backup.history.length + " versi · " + backup.evaluationCases.length + " test case.";
+  showToast("Workspace berhasil dipulihkan dari file backup.");
+}
+
 function exportEvaluationReport() {
   if (!latestEvaluationReport) {
     showToast("Jalankan evaluasi terlebih dahulu.");
@@ -1223,6 +1352,20 @@ $("improveButton").addEventListener("click", runSelectedEngine);
 $("checkOllamaButton").addEventListener("click", checkOllamaConnection);
 $("addEvalCaseButton").addEventListener("click", addEvaluationCase);
 $("runEvaluationButton").addEventListener("click", runEvaluationSuite);
+$("exportWorkspaceButton").addEventListener("click", exportWorkspaceBackup);
+$("importWorkspaceButton").addEventListener("click", () => $("workspaceImportFile").click());
+$("workspaceImportFile").addEventListener("change", async () => {
+  const file = $("workspaceImportFile").files?.[0];
+  try {
+    await importWorkspaceFile(file);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "File backup tidak dapat diimpor.";
+    $("workspaceTransferStatus").textContent = "Impor gagal: " + message;
+    showToast(message);
+  } finally {
+    $("workspaceImportFile").value = "";
+  }
+});
 $("autoOptimizeButton").addEventListener("click", runAutomaticOptimization);
 $("stopOptimizationButton").addEventListener("click", stopAutomaticOptimization);
 $("downloadEvaluationButton").addEventListener("click", exportEvaluationReport);

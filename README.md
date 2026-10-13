@@ -80,6 +80,12 @@ The **Optimasi iteratif otomatis** panel runs a bounded local search against the
 - The exported evaluation JSON includes each proposed prompt, rank, whether it was accepted, and the reason for rejection/acceptance.
 - Optimizing against a weak or unrepresentative suite can produce misleading results. Build diverse, realistic tests and retain human review for truthfulness, relevance, privacy, and nuanced semantics.
 
+## Workspace backup and restore
+
+Use **Ekspor backup** in the version-history section to save the current editor, output and safeguard settings, iteration notes, local engine/model preference, saved versions, and regression test cases in JSON. **Impor backup** validates the entire file before confirmation and replaces the current workspace. If browser storage fails, the app attempts to roll back saved data.
+
+Backups are local files and may contain sensitive prompts, project context, saved revisions, and test inputs. Store them privately. Files are limited to 2 MiB, 50 saved versions, and 20 test cases. Evaluation run output is separate; export it from the evaluation panel when needed. After importing an Ollama preference, verify the model is installed on this computer.
+
 ## Browser + real Ollama end-to-end tests
 
 Pull requests and pushes to `main` also run an end-to-end workflow in a clean Ubuntu runner. It installs Chromium through Playwright, installs Ollama, pulls the small `qwen2.5:0.5b` test model, starts the static app, and exercises the real browser-to-Ollama path. The scenario covers structural analysis, prompt generation, local version persistence, Markdown/JSON downloads, Ollama model discovery, real inference, regression A/B evaluation, evaluation-report JSON export, and iterative feedback.
@@ -104,7 +110,7 @@ A higher pass rate only shows better performance on the checks you wrote. Avoid 
 - [x] Add automated tests and CI.
 - [x] Add task-specific local A/B evaluation cases and regression comparison.
 - [x] Add an opt-in local Ollama adapter, loopback-only endpoint validation, model discovery, and clear privacy controls.
-- [ ] Add import/export of complete workspaces.
+- [x] Add validated JSON backup/restore for editor state, version history, local preferences, and regression cases.
 
 ## Project principles
 

@@ -139,6 +139,29 @@ try {
   await page.locator("#successCriteria").fill("Output parses as JSON and contains summary and risks.");
   await page.locator("#improveButton").click();
 
+  const [workspaceDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#exportWorkspaceButton").click()
+  ]);
+  const workspaceText = await readDownload(workspaceDownload);
+  const workspaceBackup = JSON.parse(workspaceText);
+  assert.equal(workspaceBackup.schemaVersion, 1);
+  assert.equal(workspaceBackup.history.length, 1);
+  assert.equal(workspaceBackup.evaluationCases.length, 1);
+  assert.equal(workspaceBackup.workspace.fields.originalPrompt, strictPrompt);
+  await page.locator("#originalPrompt").fill("tampered after backup");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#workspaceImportFile").setInputFiles({
+    name: "workspace-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(workspaceText)
+  });
+  await waitForText(page, "#workspaceTransferStatus", "Backup berhasil dipulihkan", 10_000);
+  assert.equal(await page.locator("#originalPrompt").inputValue(), strictPrompt, "import must restore editor fields");
+  assert.equal(await page.locator(".history-card").count(), 1, "import must restore saved versions");
+  assert.equal(await page.locator(".eval-case-card").count(), 1, "import must restore regression cases");
+  console.log("[PASS] Workspace backup export/import restores editor, history, and evaluation suite");
+
   await page.locator("#engineMode").selectOption("ollama");
   await page.locator("#checkOllamaButton").click();
   await waitForText(page, "#ollamaStatus", "Terhubung", 30_000);
