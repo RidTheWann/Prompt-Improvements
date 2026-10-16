@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101319">
-  <meta name="description" content="Workbench lokal untuk menyusun, menganalisis, dan menyempurnakan prompt secara iteratif tanpa API berbayar.">
+  <meta name="description" content="Workbench lokal untuk menyusun, menganalisis, dan menyempurnakan prompt secara iteratif tanpa server perantara.">
   <title>Prompt Improvements — Workbench</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -21,14 +21,15 @@
           <small>Prompt engineering workbench</small>
         </span>
       </a>
-      <div class="topbar-status"><span class="status-dot"></span> Lokal · Tanpa cloud API</div>
+      <div class="topbar-status"><span class="status-dot"></span> Privat · API key milikmu
+        <button id="advancedToggle" class="button button-quiet button-small" type="button" aria-pressed="false">Mode lanjutan</button></div>
     </header>
 
     <main>
       <section class="hero">
-        <div class="eyebrow"><span class="eyebrow-line"></span> BUILD BETTER INSTRUCTIONS</div>
+        <div class="eyebrow"><span class="eyebrow-line"></span> PERBAIKI PROMPT-MU</div>
         <h1>Prompt biasa.<br><span>Instruksi yang lebih tajam.</span></h1>
-        <p>Ubah permintaan awal menjadi instruksi yang lebih jelas dan dapat dievaluasi. Perbaiki, uji, catat versi, lalu ulangi—tanpa API berbayar.</p>
+        <p>Ubah permintaan awal menjadi instruksi yang lebih jelas dan dapat dievaluasi. Perbaiki, uji, catat versi, lalu ulangi—tanpa server perantara.</p>
         <div class="hero-meta">
           <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Pemrosesan lokal</span>
           <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Analisis transparan</span>
@@ -44,6 +45,10 @@
               <h2>Prompt awal</h2>
             </div>
             <button id="resetButton" class="button button-quiet button-small" type="button">Mulai baru</button>
+          </div>
+          <div class="template-picker" role="group" aria-label="Mulai cepat dengan contoh">
+            <span class="muted-label">Mulai cepat:</span>
+            <div id="templateList" class="template-list"></div>
           </div>
           <label class="field-label" for="originalPrompt">Tulis prompt yang ingin diperbaiki <span class="required">*</span></label>
           <textarea id="originalPrompt" class="textarea prompt-input" rows="6" placeholder="Contoh: Buat REST API untuk mengelola data pengguna dengan Python." spellcheck="true"></textarea>
@@ -119,34 +124,41 @@
 
           <div class="ai-local-panel">
             <div class="ai-panel-heading">
-              <div><h3>Engine penyempurnaan</h3><p>Pilih mode sesuai kebutuhan. Mode AI memproses prompt pada model lokalmu.</p></div>
+              <div><h3>Engine penyempurnaan</h3><p>Mode struktur bekerja instan di browser. Mode AI memakai API key milikmu sendiri.</p></div>
               <span class="local-ai-tag"><span class="status-dot"></span> Opsional</span>
             </div>
             <div class="field-row ai-config-row">
               <div class="field">
                 <label class="field-label" for="engineMode">Mode engine</label>
-                <select id="engineMode" class="text-input">
-                  <option value="rules">Struktur lokal · instan</option>
-                  <option value="ollama">AI lokal · Ollama</option>
-                </select>
+                <select id="engineMode" class="text-input"><option value="rules">Struktur lokal · instan</option><option value="ai">AI via API key</option></select>
               </div>
               <div class="field">
-                <label class="field-label" for="ollamaModel">Model terpasang</label>
-                <select id="ollamaModel" class="text-input"><option value="">Cek koneksi untuk memuat model</option></select>
+                <label class="field-label" for="llmProvider">Penyedia AI</label>
+                <select id="llmProvider" class="text-input"></select>
               </div>
             </div>
+            <div id="llmEndpointField" class="field" hidden>
+              <label class="field-label" for="llmEndpoint">Alamat endpoint (HTTPS)</label>
+              <input id="llmEndpoint" class="text-input" type="url" placeholder="https://api.openai.com/v1" spellcheck="false" autocomplete="off">
+            </div>
             <div class="field">
-              <label class="field-label" for="ollamaEndpoint">Alamat server Ollama</label>
-              <input id="ollamaEndpoint" class="text-input" type="url" value="http://localhost:11434" spellcheck="false" autocomplete="off">
+              <label class="field-label" for="llmApiKey">API key</label>
+              <input id="llmApiKey" class="text-input" type="password" placeholder="Tempel API key" spellcheck="false" autocomplete="off">
+            </div>
+            <label class="toggle-row" for="llmRemember">
+              <span><strong>Ingat key di perangkat ini</strong><small>Nonaktif: key hanya bertahan selama tab terbuka.</small></span>
+              <input id="llmRemember" type="checkbox">
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <div class="field">
+              <label class="field-label" for="llmModel">Model</label>
+              <select id="llmModel" class="text-input"><option value="">Cek koneksi untuk memuat model</option></select>
             </div>
             <div class="ai-connection-row">
-              <button id="checkOllamaButton" class="button button-secondary" type="button">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 8a6.5 6.5 0 1 0 .1 3"/><path d="M16.5 3.5V8H12"/></svg>
-                Cek koneksi & model
-              </button>
-              <span id="ollamaStatus" class="ai-connection-status" data-tone="neutral">Belum dicek. Mode struktur tetap bisa dipakai.</span>
+              <button id="checkLlmButton" class="button button-secondary" type="button">Cek koneksi &amp; model</button>
+              <span id="llmStatus" class="ai-connection-status" data-tone="neutral">Mode struktur bekerja tanpa API key.</span>
             </div>
-            <p class="ai-local-note">AI lokal memerlukan <a href="https://ollama.com/download" target="_blank" rel="noreferrer">Ollama</a> dan model yang sudah diunduh. Prompt dikirim hanya ke endpoint loopback lokal yang kamu tentukan—bukan ke API cloud. Situs GitHub Pages mungkin memerlukan izin CORS; lihat README.</p>
+            <p class="ai-local-note">API key dikirim langsung dari browsermu ke penyedia pilihanmu, tanpa server perantara, dan tidak pernah masuk ke backup atau ekspor. Pakai key dengan batas pengeluaran, dan jangan gunakan di komputer bersama. Akses langsung dari browser didukung Anthropic, Google Gemini, dan OpenRouter (juga untuk model GPT).</p>
           </div>
           <div class="primary-actions">
             <button id="analyzeButton" class="button button-secondary" type="button">
@@ -164,7 +176,7 @@
         <section class="panel output-panel" aria-label="Analisis dan hasil">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">02 / REFINE</div>
+              <div class="section-kicker">02 / HASIL</div>
               <h2>Analisis & hasil</h2>
             </div>
             <span id="resultStatus" class="status-chip">Menunggu input</span>
@@ -225,14 +237,14 @@
         </section>
       </section>
 
-      <section class="evaluation-section">
+      <section id="evaluationSection" class="evaluation-section" hidden>
         <div class="evaluation-header">
           <div>
-            <div class="section-kicker">03 / REGRESSION TESTS</div>
+            <div class="section-kicker">03 / UJI LANJUTAN</div>
             <h2>Uji apakah prompt benar-benar membaik</h2>
-            <p>Jalankan prompt awal dan hasil revisi pada input identik dengan model lokal yang sama. Penilaian otomatis memeriksa kriteria yang kamu tetapkan.</p>
+            <p>Jalankan prompt awal dan hasil revisi pada input identik dengan model AI yang sama. Penilaian otomatis memeriksa kriteria yang kamu tetapkan.</p>
           </div>
-          <span class="local-ai-tag"><span class="status-dot"></span> Ollama lokal</span>
+          <span class="local-ai-tag"><span class="status-dot"></span> Model AI</span>
         </div>
 
         <div class="evaluation-layout">
@@ -283,7 +295,7 @@
               <div class="history-empty"><span aria-hidden="true">◎</span><div><strong>Suite masih kosong</strong><p>Buat test case pertama yang sesuai dengan tugas prompt kamu.</p></div></div>
             </div>
             <div class="evaluation-runbar">
-              <div class="eval-run-copy"><strong>Perbandingan baseline vs revisi</strong><span id="evalRunStatus">Gunakan prompt hasil revisi dan cek koneksi Ollama sebelum mulai.</span></div>
+              <div class="eval-run-copy"><strong>Perbandingan baseline vs revisi</strong><span id="evalRunStatus">Gunakan prompt hasil revisi dan cek koneksi AI sebelum mulai.</span></div>
               <button id="runEvaluationButton" class="button button-secondary" type="button">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14M3 10h14M3 15.5h14"/><path d="m6 2 2.5 2.5L6 7M12 7l2.5 3-2.5 3M6 13l2.5 2.5L6 18"/></svg>
                 Jalankan evaluasi
@@ -313,7 +325,7 @@
       <section class="history-section">
         <div class="history-header">
           <div>
-            <div class="section-kicker">04 / VERSIONING</div>
+            <div class="section-kicker">04 / RIWAYAT</div>
             <h2>Riwayat iterasi</h2>
             <p>Versi tersimpan pada browser ini saja. Riwayat tidak dikirim ke server.</p>
           </div>
@@ -333,7 +345,7 @@
 
     <footer class="footer">
       <div class="footer-brand"><span class="brand-mark small-mark">P<span>+</span></span><span>Prompt Improvements</span></div>
-      <p>Gratis · Local-first · Tanpa API key</p>
+      <p>Gratis · Local-first · API key opsional</p>
       <p class="footer-note">Analisis berbasis aturan. Uji prompt pada tugas nyata sebelum mengandalkannya di produksi.</p>
     </footer>
   </div>
