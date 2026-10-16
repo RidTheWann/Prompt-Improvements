@@ -3,14 +3,14 @@ name: One-time remote branch cleanup
 on:
   push:
     branches:
-      - development
+      - main
 
 permissions:
   contents: write
 
 jobs:
   cleanup:
-    if: github.ref == 'refs/heads/development'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
