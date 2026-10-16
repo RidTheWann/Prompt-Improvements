@@ -8,12 +8,12 @@ Prompt improvement should be a repeatable engineering workflow—not a one-shot 
 
 ## Current MVP
 
-- **No paid API required.** Deterministic mode runs in the browser; optional semantic refinement uses a model installed locally through Ollama.
+- **Free by default.** Deterministic mode runs in the browser; optional AI refinement uses your own API key.
 - **Structured refinement.** Keep the original request while adding optional objective, context, audience, constraints, output format, and success criteria.
 - **Transparent quality checks.** Heuristic signals highlight missing prompt structure. They are guidance, not a measure of factual correctness or guaranteed model performance.
 - **Iterative versions.** Save prompt versions in browser storage, review previous drafts, and restore them.
 - **Portable output.** Copy or download a prompt as Markdown or JSON.
-- **Privacy by default.** Prompt versions remain in browser local storage. AI mode sends prompt text only to a loopback Ollama endpoint on your own computer; the app has no cloud inference integration or analytics.
+- **Privacy by default.** Prompt versions remain in browser local storage. AI mode sends prompt text only to the provider you choose, using your own key; the app has no analytics or intermediary server.
 
 ## Run locally
 
@@ -43,23 +43,18 @@ npm test
 4. Generate a structured version and compare it with the original.
 5. Save an iteration, test it against real tasks, and refine it again.
 
-The deterministic engine does not infer missing domain knowledge or guarantee better answers. Ollama mode adds semantic rewriting with a local model, but its output still needs review and evaluation against representative test cases.
+The deterministic engine does not infer missing domain knowledge or guarantee better answers. AI mode adds semantic rewriting with a model you connect via API key, but its output still needs review and evaluation against representative test cases.
 
-## AI lokal dengan Ollama
+## Koneksi AI dengan API key
 
-AI mode memberi revisi semantik menggunakan model yang berjalan di komputermu. Tidak memerlukan API key atau biaya per token, tetapi model perlu diunduh dan pemrosesan memakai sumber daya perangkat.
+Mode **AI via API key** meminta model menulis ulang prompt-mu dengan meta-prompt rekayasa prompt (peran, delimiter data, aturan positif, format, kriteria, pemeriksaan mandiri) dan tetap menjaga fakta tidak dikarang.
 
-1. Install Ollama dari https://ollama.com/download.
-2. Unduh model yang ingin dipakai. Contoh: `ollama pull qwen3:8b`.
-3. Pastikan Ollama berjalan; endpoint lokal default adalah `http://localhost:11434`.
-4. Jalankan web app dengan server lokal seperti yang dijelaskan di atas, lalu klik **Cek koneksi & model** dan pilih model yang terpasang.
-5. Ubah **Mode engine** menjadi **AI lokal · Ollama**, lalu klik **Sempurnakan dengan AI lokal**.
+1. Pilih **Mode engine → AI via API key** dan penyedia: OpenRouter (ratusan model, termasuk GPT), Anthropic, Google Gemini, atau endpoint kustom kompatibel OpenAI (wajib HTTPS; HTTP hanya untuk localhost).
+2. Tempel API key lalu klik **Cek koneksi & model**; daftar model diambil langsung dari penyedia sehingga tidak ada nama model usang.
+3. Klik **Sempurnakan dengan AI**.
 
-### Jika aplikasi dibuka dari GitHub Pages
+Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). Key hanya disimpan di sessionStorage, atau di localStorage bila kamu mengaktifkan **Ingat key**, dan tidak pernah masuk ke backup/ekspor. Siapa pun yang punya akses ke browser ini dapat membacanya, jadi gunakan key dengan batas pengeluaran. OpenAI langsung dari browser dapat diblokir CORS; gunakan OpenRouter atau proxy sendiri via endpoint kustom. Jika koneksi gagal, mode struktur tetap bisa dipakai.
 
-Browser dapat memblokir permintaan lintas-origin. Ollama menerima origin lokal secara default; untuk situs publik, tambahkan origin situs ke `OLLAMA_ORIGINS` lalu restart Ollama. Gunakan hanya origin yang kamu percaya. Contoh untuk repo ini: `https://ridthewann.github.io` (origin tidak menyertakan `/Prompt-Improvements`). Lihat [panduan CORS resmi Ollama](https://github.com/ollama/ollama/blob/main/docs/faq.mdx#how-can-i-allow-additional-web-origins-to-access-ollama).
-
-Endpoint yang diterima UI dibatasi ke `localhost`, `127.0.0.1`, dan `::1`; alamat remote ditolak supaya prompt tidak tanpa sengaja dikirim ke layanan eksternal. Jika koneksi gagal, mode struktur deterministik tetap dapat digunakan.
 ## Deploy to GitHub Pages
 
 The repository includes a static deployment workflow. One-time setup is required because GitHub does not expose the Pages publishing source through this chat integration:
@@ -70,7 +65,7 @@ The repository includes a static deployment workflow. One-time setup is required
 
 Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
 
-The deployment contains only the app's static frontend files. Ollama remains local to the computer using AI mode; when accessing from GitHub Pages, configure `OLLAMA_ORIGINS` for `https://ridthewann.github.io` as described above.
+The deployment contains only the app's static frontend files. API keys never reach the deployment; AI calls go from the visitor's browser straight to the chosen provider.
 ## Guarded automatic prompt optimization
 
 The **Optimasi iteratif otomatis** panel runs a bounded local search against the test cases you've written. It caches baseline outputs once per run, asks the local model to revise the best prompt using failed-check feedback, evaluates each proposal against the same baseline and criteria, and accepts it only when its rank improves. Ranking prioritizes fewer regressions, then more fully passing cases, then a higher average criteria score, then a shorter prompt. Acceptance criteria themselves are never altered.
@@ -84,19 +79,13 @@ The **Optimasi iteratif otomatis** panel runs a bounded local search against the
 
 Use **Ekspor backup** in the version-history section to save the current editor, output and safeguard settings, iteration notes, local engine/model preference, saved versions, and regression test cases in JSON. **Impor backup** validates the entire file before confirmation and replaces the current workspace. If browser storage fails, the app attempts to roll back saved data.
 
-Backups are local files and may contain sensitive prompts, project context, saved revisions, and test inputs. Store them privately. Files are limited to 2 MiB, 50 saved versions, and 20 test cases. Evaluation run output is separate; export it from the evaluation panel when needed. After importing an Ollama preference, verify the model is installed on this computer.
-
-## Browser + real Ollama end-to-end tests
-
-Pull requests and pushes to `main` also run an end-to-end workflow in a clean Ubuntu runner. It installs Chromium through Playwright, installs Ollama, pulls the small `qwen2.5:0.5b` test model, starts the static app, and exercises the real browser-to-Ollama path. The scenario covers structural analysis, prompt generation, local version persistence, Markdown/JSON downloads, Ollama model discovery, real inference, regression A/B evaluation, evaluation-report JSON export, and iterative feedback.
-
-The E2E job uses a downloaded local model; it does not call a paid model API. It requires more time than unit tests because the model must be downloaded and run. Unit/integration tests remain available with `npm test`.
+Backups are local files and may contain sensitive prompts, project context, saved revisions, and test inputs. Store them privately. Files are limited to 2 MiB, 50 saved versions, and 20 test cases. Evaluation run output is separate; export it from the evaluation panel when needed.
 
 ## Regression evaluation
 
-After creating a prompt revision, add test cases that represent real tasks your prompt must handle. Each case can verify required phrases, forbidden phrases, valid JSON, required JSON keys, and a maximum word count. The suite runs the original and revised prompt against the same input and the same locally installed Ollama model, then reports pass rates, changed cases, and per-check output.
+After creating a prompt revision, add test cases that represent real tasks your prompt must handle. Each case can verify required phrases, forbidden phrases, valid JSON, required JSON keys, and a maximum word count. The suite runs the original and revised prompt against the same input and the same model, then reports pass rates, changed cases, and per-check output.
 
-1. Start Ollama and select a model in the workbench.
+1. Connect an AI provider with your API key and select a model in the workbench (enable **Mode lanjutan**).
 2. Add two or more representative test cases where practical. Use synthetic or sanitized inputs for private data.
 3. Generate a revised prompt, open **Regression Tests**, and click **Jalankan evaluasi**.
 4. Inspect both outputs and failed checks; export the report as JSON for a versioned record.
@@ -109,7 +98,8 @@ A higher pass rate only shows better performance on the checks you wrote. Avoid 
 - [x] Add explainable heuristic analysis and iterative version history.
 - [x] Add automated tests and CI.
 - [x] Add task-specific local A/B evaluation cases and regression comparison.
-- [x] Add an opt-in local Ollama adapter, loopback-only endpoint validation, model discovery, and clear privacy controls.
+- [x] Add an opt-in API-key adapter (Anthropic, Gemini, OpenRouter, custom OpenAI-compatible) with live model discovery, HTTPS enforcement, and keys excluded from backups.
+- [x] Strengthen the structuring engine: task-type roles, working steps, placeholder detection, clarifying-question rules, and a stronger rewrite meta-prompt.
 - [x] Add validated JSON backup/restore for editor state, version history, local preferences, and regression cases.
 
 ## CI action maintenance

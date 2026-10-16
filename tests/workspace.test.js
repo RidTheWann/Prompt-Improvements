@@ -58,12 +58,12 @@ test("workspace validation rejects unsupported app or schema versions", () => {
   assert.throws(() => validateWorkspaceBackup({ ...backup, schemaVersion: 99 }), /tidak didukung/);
 });
 
-test("workspace validation restricts Ollama endpoints to loopback", () => {
+test("workspace validation rejects insecure custom endpoints and never carries API keys", () => {
   const backup = createWorkspaceBackup(fixture());
-  backup.workspace.engine.endpoint = "https://example.com:11434";
-  assert.throws(() => validateWorkspaceBackup(backup), /endpoint Ollama yang tidak diizinkan/);
-  backup.workspace.engine.endpoint = "http://user:password@localhost:11434";
-  assert.throws(() => validateWorkspaceBackup(backup), /endpoint Ollama yang tidak diizinkan/);
+  backup.workspace.engine = { mode: "ai", provider: "custom", model: "m", endpoint: "http://evil.example/v1" };
+  assert.throws(() => validateWorkspaceBackup(backup), /endpoint AI yang tidak aman/);
+  backup.workspace.engine = { mode: "ollama", model: "", endpoint: "http://localhost:11434" };
+  assert.equal(validateWorkspaceBackup(backup).workspace.engine.mode, "rules");
 });
 
 test("workspace validation enforces file, history, and test-case limits", () => {

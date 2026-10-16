@@ -1,5 +1,5 @@
 import { normalizeEvaluationCase } from "./evaluation.js";
-import { normalizeOllamaBaseUrl } from "./ollama-client.js";
+import { validateEndpointUrl, PROVIDERS } from "./llm-client.js";
 
 export const WORKSPACE_SCHEMA_VERSION = 1;
 export const MAX_WORKSPACE_FILE_CHARS = 2 * 1024 * 1024;
@@ -120,13 +120,13 @@ export function validateWorkspaceBackup(value) {
   const iterationNotes = normalizeStringList(workspace.iterationNotes, "Catatan iterasi workspace", 50, 2000);
   const engine = workspace.engine;
   if (!isRecord(engine)) throw new Error("Pengaturan engine tidak lengkap.");
-  if (!["rules", "ollama"].includes(engine.mode)) throw new Error("Mode engine tidak didukung.");
+  if (!["rules", "ai", "ollama"].includes(engine.mode)) throw new Error("Mode engine tidak didukung.");
+  const provider = PROVIDERS[engine.provider] ? engine.provider : "openrouter";
+  const mode = engine.mode === "ai" ? "ai" : "rules";
   const model = requireString(engine.model ?? "", "Nama model", 200);
-  let endpoint;
-  try {
-    endpoint = normalizeOllamaBaseUrl(engine.endpoint ?? "http://localhost:11434");
-  } catch {
-    throw new Error("Backup berisi endpoint Ollama yang tidak diizinkan. Hanya alamat loopback lokal yang didukung.");
+  let endpoint = "";
+  if (provider === "custom" && engine.endpoint) {
+    try { endpoint = validateEndpointUrl(engine.endpoint); } catch { throw new Error("Backup berisi endpoint AI yang tidak aman. Gunakan HTTPS."); }
   }
   const exportedAt = typeof value.exportedAt === "string" && Number.isFinite(Date.parse(value.exportedAt))
     ? new Date(value.exportedAt).toISOString()
@@ -145,7 +145,7 @@ export function validateWorkspaceBackup(value) {
         review: safeguardsInput.review !== false
       },
       iterationNotes,
-      engine: { mode: engine.mode, model, endpoint }
+      engine: { mode, provider, model, endpoint }
     },
     history: normalizeHistory(value.history ?? []),
     evaluationCases: normalizeCases(value.evaluationCases ?? [])

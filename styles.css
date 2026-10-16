@@ -23,6 +23,12 @@ html { min-width: 320px; scroll-behavior: smooth; }
 body { margin: 0; background: radial-gradient(ellipse at 50% -20%, #202938 0, var(--bg) 48rem); color: var(--text); font-size: 14px; line-height: 1.55; }
 button, input, textarea, select { font: inherit; }
 button { color: inherit; }
+.evaluation-section[hidden] { display: none; }
+.template-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
+.template-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.template-chip { font: inherit; font-size: 0.85rem; color: var(--text); background: var(--surface-raised); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; min-height: 40px; cursor: pointer; }
+.template-chip:hover { border-color: var(--accent-strong); }
+.topbar-status { display: flex; align-items: center; gap: 12px; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 .app-shell { max-width: 1440px; margin: 0 auto; padding: 0 36px; }

@@ -1,14 +1,15 @@
-const CACHE_NAME = "prompt-improvements-v3";
+const CACHE_NAME = "prompt-improvements-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./src/app.js",
   "./src/prompt-engine.js",
-  "./src/ollama-client.js",
+  "./src/llm-client.js",
   "./src/evaluation.js",
   "./src/optimizer.js",
   "./src/workspace.js",
+  "./src/templates.js",
   "./manifest.webmanifest",
   "./icon.svg"
 ];

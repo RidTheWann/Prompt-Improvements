@@ -1,22 +1,24 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
-import { improvePromptWithOllama, listLocalModels, normalizeOllamaBaseUrl, runPromptTaskWithOllama } from "./ollama-client.js";
+import { PROVIDERS, configureConnection, improvePromptWithAI, listModels, normalizeEndpoint, runPromptTask } from "./llm-client.js";
 import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
 import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "./optimizer.js";
+import { PROMPT_TEMPLATES, getTemplate } from "./templates.js";
 import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS } from "./workspace.js";
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
-const OLLAMA_CONFIG_KEY = "prompt-improvements.ollama.v1";
+const LLM_CONFIG_KEY = "prompt-improvements.llm.v1";
 const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
 const MAX_EVAL_CASES = 20;
 const MAX_HISTORY = 50;
+const ADVANCED_KEY = "prompt-improvements.advanced.v1";
 const $ = (id) => document.getElementById(id);
 
 let savedVersions = loadHistory();
 let lastAnalysis = null;
 let iterationNotes = [];
 let toastTimer = null;
-let ollamaConfig = loadOllamaConfig();
-let ollamaModels = [];
+let llmConfig = loadLlmConfig();
+let llmModels = [];
 let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
 let activeOptimizationController = null;
@@ -64,35 +66,51 @@ function loadHistory() {
 }
 
 
-function loadOllamaConfig() {
+const KEY_SESSION = "prompt-improvements.api-key.session";
+const KEY_PERSIST = "prompt-improvements.api-key.persist";
+
+function loadLlmConfig() {
+  const fallback = { provider: "openrouter", baseUrl: "", model: "", remember: false };
   try {
-    const stored = JSON.parse(localStorage.getItem(OLLAMA_CONFIG_KEY) || "{}");
-    return { baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "http://localhost:11434", model: typeof stored.model === "string" ? stored.model : "" };
-  } catch {
-    return { baseUrl: "http://localhost:11434", model: "" };
-  }
+    const stored = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || "{}");
+    return { provider: PROVIDERS[stored.provider] ? stored.provider : fallback.provider, baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "", model: typeof stored.model === "string" ? stored.model : "", remember: stored.remember === true };
+  } catch { return fallback; }
 }
 
-function saveOllamaConfig() {
-  ollamaConfig = { baseUrl: $("ollamaEndpoint").value.trim() || "http://localhost:11434", model: $("ollamaModel").value.trim() };
-  try { localStorage.setItem(OLLAMA_CONFIG_KEY, JSON.stringify(ollamaConfig)); }
-  catch { showToast("Pengaturan Ollama tidak bisa disimpan oleh browser. Kamu tetap bisa melanjutkan sesi ini."); }
+function readStoredKey() {
+  try { return sessionStorage.getItem(KEY_SESSION) || localStorage.getItem(KEY_PERSIST) || ""; } catch { return ""; }
 }
 
-function setOllamaStatus(message, tone = "neutral") {
-  const status = $("ollamaStatus");
+function endpointValue() {
+  configureConnection({ provider: $("llmProvider").value, apiKey: $("llmApiKey").value });
+  return normalizeEndpoint($("llmEndpoint").value);
+}
+
+function saveLlmConfig() {
+  llmConfig = { provider: $("llmProvider").value, baseUrl: $("llmEndpoint").value.trim(), model: $("llmModel").value.trim(), remember: $("llmRemember").checked };
+  const key = $("llmApiKey").value.trim();
+  try {
+    localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(llmConfig));
+    sessionStorage.removeItem(KEY_SESSION);
+    localStorage.removeItem(KEY_PERSIST);
+    if (key) (llmConfig.remember ? localStorage : sessionStorage).setItem(llmConfig.remember ? KEY_PERSIST : KEY_SESSION, key);
+  } catch { showToast("Pengaturan tidak bisa disimpan oleh browser. Kamu tetap bisa melanjutkan sesi ini."); }
+}
+
+function setLlmStatus(message, tone = "neutral") {
+  const status = $("llmStatus");
   status.textContent = message;
   status.dataset.tone = tone;
 }
 
-function populateOllamaModels(models, preferredModel = "") {
-  const select = $("ollamaModel");
+function populateLlmModels(models, preferredModel = "") {
+  const select = $("llmModel");
   select.replaceChildren();
-  ollamaModels = [...models];
+  llmModels = [...models];
   if (models.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Tidak ada model terpasang";
+    option.textContent = "Tidak ada model tersedia";
     select.append(option);
     select.value = "";
     return;
@@ -104,51 +122,64 @@ function populateOllamaModels(models, preferredModel = "") {
     select.append(option);
   }
   select.value = models.includes(preferredModel) ? preferredModel : models[0];
-  ollamaConfig.model = select.value;
+  llmConfig.model = select.value;
 }
 
-function initializeOllamaSettings() {
-  $("ollamaEndpoint").value = ollamaConfig.baseUrl;
-  if (ollamaConfig.model) {
+function initializeLlmSettings() {
+  for (const [id, provider] of Object.entries(PROVIDERS)) {
     const option = document.createElement("option");
-    option.value = ollamaConfig.model;
-    option.textContent = ollamaConfig.model + " (belum diverifikasi)";
-    $("ollamaModel").append(option);
-    $("ollamaModel").value = ollamaConfig.model;
+    option.value = id;
+    option.textContent = provider.label;
+    $("llmProvider").append(option);
   }
+  $("llmProvider").value = llmConfig.provider;
+  $("llmEndpoint").value = llmConfig.baseUrl;
+  $("llmRemember").checked = llmConfig.remember;
+  $("llmApiKey").value = readStoredKey();
+  if (llmConfig.model) {
+    const option = document.createElement("option");
+    option.value = llmConfig.model;
+    option.textContent = llmConfig.model + " (belum diverifikasi)";
+    $("llmModel").append(option);
+    $("llmModel").value = llmConfig.model;
+  }
+  updateProviderFields();
   updateEngineLabel();
 }
 
-function updateEngineLabel() {
-  const useOllama = $("engineMode").value === "ollama";
-  $("improveButtonText").textContent = useOllama ? "Sempurnakan dengan AI lokal" : "Perbaiki prompt";
-  if (useOllama) setOllamaStatus("Mode AI dipilih. Cek koneksi dan pilih model lokal terlebih dahulu.");
-  else if (ollamaModels.length > 0) setOllamaStatus(ollamaModels.length + " model lokal terdeteksi.", "success");
-  else setOllamaStatus("Mode struktur tetap bisa dipakai tanpa Ollama.");
+function updateProviderFields() {
+  $("llmEndpointField").hidden = $("llmProvider").value !== "custom";
 }
 
-async function checkOllamaConnection() {
-  const button = $("checkOllamaButton");
+function updateEngineLabel() {
+  const useAi = $("engineMode").value === "ai";
+  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Perbaiki prompt";
+  if (!useAi) setLlmStatus("Mode struktur bekerja tanpa API key.");
+  else if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
+  else setLlmStatus("Masukkan API key, lalu klik Cek koneksi & model.");
+}
+
+async function checkLlmConnection() {
+  const button = $("checkLlmButton");
   const previousLabel = button.textContent;
   button.disabled = true;
   button.textContent = "Memeriksa...";
-  setOllamaStatus("Menghubungi server lokal...");
+  setLlmStatus("Menghubungi penyedia AI...");
   try {
-    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
-    const models = await listLocalModels(baseUrl);
-    ollamaConfig.baseUrl = baseUrl;
-    populateOllamaModels(models, ollamaConfig.model);
-    saveOllamaConfig();
+    const models = await listModels(endpointValue());
+    llmConfig.baseUrl = $("llmEndpoint").value.trim();
+    populateLlmModels(models, llmConfig.model);
+    saveLlmConfig();
     if (models.length === 0) {
-      setOllamaStatus("Ollama terhubung, tetapi belum ada model. Unduh model melalui terminal terlebih dahulu.", "error");
-      showToast("Ollama terhubung, tetapi belum ada model lokal.");
+      setLlmStatus("Terhubung, tetapi tidak ada model yang tersedia untuk key ini.", "error");
       return;
     }
-    setOllamaStatus("Terhubung · " + models.length + " model lokal tersedia.", "success");
-    showToast("Koneksi berhasil. Pilih model untuk penyempurnaan AI lokal.");
+    setLlmStatus("Terhubung · " + models.length + " model tersedia.", "success");
+    showToast("Koneksi berhasil. Pilih model untuk penyempurnaan AI.");
   } catch (error) {
-    setOllamaStatus(error instanceof Error ? error.message : "Koneksi Ollama gagal.", "error");
-    showToast(error instanceof Error ? error.message : "Koneksi Ollama gagal.");
+    const message = error instanceof Error ? error.message : "Koneksi gagal.";
+    setLlmStatus(message, "error");
+    showToast(message);
   } finally {
     button.disabled = false;
     button.textContent = previousLabel;
@@ -172,7 +203,7 @@ async function runSelectedEngine() {
   }
   renderAnalysis(analysis);
 
-  if ($("engineMode").value !== "ollama") {
+  if ($("engineMode").value !== "ai") {
     $("improvedPrompt").value = deterministicDraft;
     updateWordCounts();
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
@@ -189,32 +220,32 @@ async function runSelectedEngine() {
   let controller;
   let timeoutId;
   button.disabled = true;
-  $("improveButtonText").textContent = "AI lokal sedang bekerja...";
-  $("resultStatus").textContent = "Mengirim prompt ke model lokal...";
-  setOllamaStatus("Model sedang memproses di komputer ini. Waktu respons bergantung pada model dan perangkat.");
+  $("improveButtonText").textContent = "AI sedang bekerja...";
+  $("resultStatus").textContent = "Mengirim prompt ke model...";
+  setLlmStatus("Model sedang memproses di komputer ini. Waktu respons bergantung pada model dan perangkat.");
   try {
-    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
-    const model = $("ollamaModel").value.trim();
-    if (!model || !ollamaModels.includes(model)) {
-      throw new Error("Cek koneksi dan pilih model yang terpasang sebelum memakai AI lokal.");
+    const baseUrl = endpointValue();
+    const model = $("llmModel").value.trim();
+    if (!model || !llmModels.includes(model)) {
+      throw new Error("Cek koneksi dan pilih model yang terpasang sebelum memakai AI.");
     }
-    saveOllamaConfig();
+    saveLlmConfig();
     controller = new AbortController();
     timeoutId = window.setTimeout(() => controller.abort(), 240000);
-    const refinedPrompt = await improvePromptWithOllama({
+    const refinedPrompt = await improvePromptWithAI({
       baseUrl, model, originalPrompt, structuredDraft: draftToImprove, settings, signal: controller.signal
     });
     $("improvedPrompt").value = refinedPrompt;
-    $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI lokal selesai";
+    $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
     updateWordCounts();
-    setOllamaStatus("Selesai · prompt diproses oleh model lokal.", "success");
-    showToast("Prompt disempurnakan oleh AI lokal. Periksa hasil sebelum digunakan.");
+    setLlmStatus("Selesai · prompt diproses oleh model.", "success");
+    showToast("Prompt disempurnakan oleh AI. Periksa hasil sebelum digunakan.");
   } catch (error) {
-    $("resultStatus").textContent = "AI lokal gagal";
+    $("resultStatus").textContent = "AI gagal";
     const message = error?.name === "AbortError"
       ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
-      : error instanceof Error ? error.message : "AI lokal gagal menyempurnakan prompt.";
-    setOllamaStatus(message, "error");
+      : error instanceof Error ? error.message : "AI gagal menyempurnakan prompt.";
+    setLlmStatus(message, "error");
     if (!$("improvedPrompt").value.trim()) {
       $("improvedPrompt").value = deterministicDraft;
       updateWordCounts();
@@ -465,14 +496,14 @@ async function runEvaluationSuite() {
   button.disabled = true;
   $("autoOptimizeButton").disabled = true;
   $("downloadEvaluationButton").disabled = true;
-  $("evalRunStatus").textContent = "Memeriksa endpoint lokal dan model...";
+  $("evalRunStatus").textContent = "Memeriksa koneksi dan model...";
   $("evalResultSummary").hidden = true;
   $("evalResultList").replaceChildren();
 
   try {
-    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
-    const model = $("ollamaModel").value.trim();
-    const available = await listLocalModels(baseUrl);
+    const baseUrl = endpointValue();
+    const model = $("llmModel").value.trim();
+    const available = await listModels(baseUrl);
     if (!model || !available.includes(model)) {
       throw new Error("Model belum diverifikasi atau tidak lagi tersedia. Klik Cek koneksi & model pada panel engine.");
     }
@@ -486,13 +517,13 @@ async function runEvaluationSuite() {
         let baseline;
         let candidate;
         try {
-          const output = await runPromptTaskWithOllama({ baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: controller.signal });
+          const output = await runPromptTask({ baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: controller.signal });
           baseline = scoreEvaluationOutput(output, item);
         } catch (error) {
           throw new Error("Baseline gagal: " + (error?.name === "AbortError" ? "waktu eksekusi habis." : error.message));
         }
         try {
-          const output = await runPromptTaskWithOllama({ baseUrl, model, prompt: candidatePrompt, testInput: item.input, signal: controller.signal });
+          const output = await runPromptTask({ baseUrl, model, prompt: candidatePrompt, testInput: item.input, signal: controller.signal });
           candidate = scoreEvaluationOutput(output, item);
         } catch (error) {
           throw new Error("Prompt revisi gagal: " + (error?.name === "AbortError" ? "waktu eksekusi habis." : error.message));
@@ -550,7 +581,7 @@ async function evaluatePromptAgainstSuite({ prompt, baselinePrompt, baselineResu
     onProgress?.("Menguji kandidat · " + (index + 1) + "/" + cases.length + ": " + item.name);
     const baselineRecord = baselineById.get(item.id);
     if (!baselineRecord?.baseline) throw new Error("Output baseline tidak tersedia untuk kasus: " + item.name);
-    const output = await withOptimizationRequestTimeout(signal, (requestSignal) => runPromptTaskWithOllama({
+    const output = await withOptimizationRequestTimeout(signal, (requestSignal) => runPromptTask({
       baseUrl, model, prompt, testInput: item.input, signal: requestSignal
     }));
     results.push({
@@ -671,7 +702,7 @@ async function runAutomaticOptimization() {
   $("evalResultSummary").hidden = true;
   $("evalResultList").replaceChildren();
   $("autoOptimizerStatus").dataset.tone = "neutral";
-  $("autoOptimizerStatus").textContent = "Memeriksa Ollama dan menyiapkan baseline...";
+  $("autoOptimizerStatus").textContent = "Memeriksa penyedia AI dan menyiapkan baseline...";
   $("evalRunStatus").textContent = "Optimasi otomatis: menyiapkan baseline dan " + cases.length + " test case.";
 
   let bestPrompt = initialCandidate;
@@ -681,13 +712,13 @@ async function runAutomaticOptimization() {
   let stopReason = "iteration_limit";
 
   try {
-    const baseUrl = normalizeOllamaBaseUrl($("ollamaEndpoint").value);
-    const model = $("ollamaModel").value.trim();
-    const available = await listLocalModels(baseUrl, { signal: controller.signal });
-    if (!model || !ollamaModels.includes(model) || !available.includes(model)) {
-      throw new Error("Pilih dan verifikasi model Ollama yang terpasang sebelum menjalankan optimasi.");
+    const baseUrl = endpointValue();
+    const model = $("llmModel").value.trim();
+    const available = await listModels(baseUrl, { signal: controller.signal });
+    if (!model || !llmModels.includes(model) || !available.includes(model)) {
+      throw new Error("Pilih dan verifikasi model penyedia AI yang terpasang sebelum menjalankan optimasi.");
     }
-    saveOllamaConfig();
+    saveLlmConfig();
 
     baselineResults = [];
     for (let index = 0; index < cases.length; index++) {
@@ -695,7 +726,7 @@ async function runAutomaticOptimization() {
       const item = evaluationCases[index];
       $("autoOptimizerStatus").textContent = "Baseline " + (index + 1) + "/" + cases.length + ": " + item.name;
       $("evalRunStatus").textContent = "Optimasi otomatis · menjalankan baseline " + (index + 1) + "/" + cases.length + ".";
-      const output = await withOptimizationRequestTimeout(controller.signal, (requestSignal) => runPromptTaskWithOllama({
+      const output = await withOptimizationRequestTimeout(controller.signal, (requestSignal) => runPromptTask({
         baseUrl, model, prompt: originalPrompt, testInput: item.input, signal: requestSignal
       }));
       baselineResults.push({
@@ -746,7 +777,7 @@ async function runAutomaticOptimization() {
           ...settings,
           iterationNotes: [...settings.iterationNotes, feedback]
         };
-        const proposedPrompt = (await withOptimizationRequestTimeout(controller.signal, (requestSignal) => improvePromptWithOllama({
+        const proposedPrompt = (await withOptimizationRequestTimeout(controller.signal, (requestSignal) => improvePromptWithAI({
           baseUrl,
           model,
           originalPrompt,
@@ -834,7 +865,7 @@ async function runAutomaticOptimization() {
     const message = wasStopped
       ? "Optimasi dihentikan. Kandidat terbaik yang sudah diuji tetap dipertahankan."
       : error?.name === "AbortError"
-        ? "Permintaan model lokal melewati batas waktu. Kandidat terbaik yang sudah diuji tetap dipertahankan."
+        ? "Permintaan model melewati batas waktu. Kandidat terbaik yang sudah diuji tetap dipertahankan."
         : error instanceof Error ? error.message : "Optimasi otomatis gagal.";
     $("evalRunStatus").textContent = message;
     $("autoOptimizerStatus").dataset.tone = wasStopped ? "neutral" : "error";
@@ -878,8 +909,9 @@ function createCurrentWorkspaceBackup() {
       iterationNotes: [...iterationNotes],
       engine: {
         mode: $("engineMode").value,
-        model: $("ollamaModel").value.trim(),
-        endpoint: normalizeOllamaBaseUrl($("ollamaEndpoint").value)
+        model: $("llmModel").value.trim(),
+        provider: $("llmProvider").value,
+        endpoint: $("llmProvider").value === "custom" ? $("llmEndpoint").value.trim() : ""
       }
     },
     history: savedVersions,
@@ -902,12 +934,12 @@ function exportWorkspaceBackup() {
 }
 
 function applyWorkspaceBackup(backup) {
-  const storageKeys = [STORAGE_KEY, EVAL_CASES_KEY, OLLAMA_CONFIG_KEY];
+  const storageKeys = [STORAGE_KEY, EVAL_CASES_KEY, LLM_CONFIG_KEY];
   const previous = new Map(storageKeys.map((key) => [key, localStorage.getItem(key)]));
   const next = new Map([
     [STORAGE_KEY, JSON.stringify(backup.history)],
     [EVAL_CASES_KEY, JSON.stringify(backup.evaluationCases)],
-    [OLLAMA_CONFIG_KEY, JSON.stringify({ baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model })]
+    [LLM_CONFIG_KEY, JSON.stringify({ provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember })]
   ]);
   try {
     for (const [key, value] of next) localStorage.setItem(key, value);
@@ -926,8 +958,8 @@ function applyWorkspaceBackup(backup) {
   savedVersions = backup.history;
   evaluationCases = backup.evaluationCases;
   iterationNotes = [...backup.workspace.iterationNotes];
-  ollamaConfig = { baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model };
-  ollamaModels = [];
+  llmConfig = { provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember };
+  llmModels = [];
   for (const id of fields) $(id).value = backup.workspace.fields[id] ?? "";
   $("improvedPrompt").value = backup.workspace.fields.improvedPrompt ?? "";
   $("ruleIntent").checked = backup.workspace.safeguards.preserveIntent;
@@ -935,17 +967,19 @@ function applyWorkspaceBackup(backup) {
   $("ruleReview").checked = backup.workspace.safeguards.review;
   $("iterationFeedback").value = "";
   $("engineMode").value = backup.workspace.engine.mode;
-  $("ollamaEndpoint").value = backup.workspace.engine.endpoint;
-  const modelSelect = $("ollamaModel");
-  if (ollamaConfig.model) {
-    let option = [...modelSelect.options].find((item) => item.value === ollamaConfig.model);
+  $("llmProvider").value = backup.workspace.engine.provider;
+  $("llmEndpoint").value = backup.workspace.engine.endpoint;
+  updateProviderFields();
+  const modelSelect = $("llmModel");
+  if (llmConfig.model) {
+    let option = [...modelSelect.options].find((item) => item.value === llmConfig.model);
     if (!option) {
       option = document.createElement("option");
-      option.value = ollamaConfig.model;
-      option.textContent = ollamaConfig.model + " (belum diverifikasi)";
+      option.value = llmConfig.model;
+      option.textContent = llmConfig.model + " (belum diverifikasi)";
       modelSelect.append(option);
     }
-    modelSelect.value = ollamaConfig.model;
+    modelSelect.value = llmConfig.model;
   } else {
     modelSelect.value = "";
   }
@@ -1349,7 +1383,7 @@ $("originalPrompt").addEventListener("input", updateWordCounts);
 $("improvedPrompt").addEventListener("input", updateWordCounts);
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
 $("improveButton").addEventListener("click", runSelectedEngine);
-$("checkOllamaButton").addEventListener("click", checkOllamaConnection);
+$("checkLlmButton").addEventListener("click", checkLlmConnection);
 $("addEvalCaseButton").addEventListener("click", addEvaluationCase);
 $("runEvaluationButton").addEventListener("click", runEvaluationSuite);
 $("exportWorkspaceButton").addEventListener("click", exportWorkspaceBackup);
@@ -1378,11 +1412,21 @@ $("evalCaseList").addEventListener("click", (event) => {
   showToast("Test case dihapus dari suite lokal.");
 });
 $("engineMode").addEventListener("change", updateEngineLabel);
-$("ollamaModel").addEventListener("change", saveOllamaConfig);
-$("ollamaEndpoint").addEventListener("change", () => {
-  ollamaModels = [];
-  saveOllamaConfig();
-  setOllamaStatus("Alamat berubah. Cek koneksi kembali untuk memuat model.");
+$("llmProvider").addEventListener("change", () => {
+  llmModels = [];
+  llmConfig.model = "";
+  populateLlmModels([], "");
+  updateProviderFields();
+  saveLlmConfig();
+  setLlmStatus("Penyedia diganti. Masukkan API key lalu cek koneksi.");
+});
+$("llmApiKey").addEventListener("change", saveLlmConfig);
+$("llmRemember").addEventListener("change", saveLlmConfig);
+$("llmModel").addEventListener("change", saveLlmConfig);
+$("llmEndpoint").addEventListener("change", () => {
+  llmModels = [];
+  saveLlmConfig();
+  setLlmStatus("Alamat berubah. Cek koneksi kembali untuk memuat model.");
 });
 $("iterateButton").addEventListener("click", () => {
   const feedback = $("iterationFeedback").value.trim();
@@ -1418,9 +1462,56 @@ $("historyList").addEventListener("click", (event) => {
   }
 });
 
+function renderTemplates() {
+  const list = $("templateList");
+  list.replaceChildren();
+  for (const item of PROMPT_TEMPLATES) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "template-chip";
+    chip.dataset.template = item.id;
+    chip.textContent = item.icon + " " + item.label;
+    list.append(chip);
+  }
+}
+
+function applyTemplate(id) {
+  const template = getTemplate(id);
+  if (!template) return;
+  const hasWork = currentOriginal() || $("improvedPrompt").value.trim();
+  if (hasWork && !window.confirm("Ganti isi editor dengan contoh \"" + template.label + "\"? Riwayat tersimpan tidak terhapus.")) return;
+  for (const key of fields) {
+    $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
+  }
+  $("improvedPrompt").value = "";
+  iterationNotes = [];
+  updateWordCounts();
+  $("originalPrompt").focus();
+  showToast("Contoh dimuat. Ganti bagian [dalam kurung] dengan kebutuhanmu.");
+}
+
+function setAdvancedMode(enabled, persist = true) {
+  $("evaluationSection").hidden = !enabled;
+  $("advancedToggle").setAttribute("aria-pressed", String(enabled));
+  $("advancedToggle").textContent = enabled ? "Mode lanjutan: aktif" : "Mode lanjutan";
+  if (!persist) return;
+  try { localStorage.setItem(ADVANCED_KEY, enabled ? "1" : "0"); } catch { /* preferensi tidak wajib tersimpan */ }
+}
+
+$("templateList").addEventListener("click", (event) => {
+  const chip = event.target.closest("button[data-template]");
+  if (chip) applyTemplate(chip.dataset.template);
+});
+$("advancedToggle").addEventListener("click", () => setAdvancedMode($("advancedToggle").getAttribute("aria-pressed") !== "true"));
+$("originalPrompt").addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); runSelectedEngine(); }
+});
+
 updateWordCounts();
+renderTemplates();
+try { setAdvancedMode(localStorage.getItem(ADVANCED_KEY) === "1", false); } catch { setAdvancedMode(false, false); }
 renderHistory();
-initializeOllamaSettings();
+initializeLlmSettings();
 renderEvaluationCases();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
