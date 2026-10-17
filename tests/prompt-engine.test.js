@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzePrompt, buildImprovedPrompt, createExportPayload, findMissingInfo, inferTaskType } from "../src/prompt-engine.js";
+import { analyzePrompt, buildImprovedPrompt, createExportPayload, findMissingInfo, inferTaskType, stripBoilerplate } from "../src/prompt-engine.js";
 
 test("empty prompt returns actionable empty state", () => {
   const result = analyzePrompt("   ");
@@ -128,3 +128,87 @@ test("builder enforces empty and oversized input limits", () => {
   assert.throws(() => buildImprovedPrompt({ originalPrompt: "" }), /Prompt awal wajib diisi/);
   assert.throws(() => buildImprovedPrompt({ originalPrompt: "x".repeat(60001) }), /60.000 karakter/);
 });
+
+test("stripBoilerplate removes template headings, roles, generic steps, and safeguard rules while preserving user content", () => {
+  const raw = "Buat REST API sederhana untuk manajemen buku.";
+  const improved = buildImprovedPrompt({ originalPrompt: raw });
+  const stripped = stripBoilerplate(improved);
+  assert.equal(stripped, raw);
+  assert.doesNotMatch(stripped, /# Prompt yang Disempurnakan/);
+  assert.doesNotMatch(stripped, /## Peran/);
+  assert.doesNotMatch(stripped, /## Langkah kerja/);
+  assert.doesNotMatch(stripped, /## Aturan pelaksanaan/);
+  assert.doesNotMatch(stripped, /Pertahankan tujuan, fakta/);
+});
+
+test("stripBoilerplate retains custom user context, constraints, and criteria", () => {
+  const raw = "Buat REST API untuk inventaris.";
+  const improved = buildImprovedPrompt({
+    originalPrompt: raw,
+    context: "Sistem internal toko buku.",
+    constraints: "Gunakan Node.js tanpa framework\nPort 8080",
+    successCriteria: "Waktu respon di bawah 50ms"
+  });
+  const stripped = stripBoilerplate(improved);
+  assert.ok(stripped.includes(raw));
+  assert.ok(stripped.includes("Sistem internal toko buku."));
+  assert.ok(stripped.includes("Gunakan Node.js tanpa framework"));
+  assert.ok(stripped.includes("Waktu respon di bawah 50ms"));
+  assert.doesNotMatch(stripped, /## Langkah kerja/);
+  assert.doesNotMatch(stripped, /Pertahankan tujuan, fakta/);
+  assert.doesNotMatch(stripped, /Utamakan solusi yang dapat diuji/);
+});
+
+test("before and after scores only reflect user content without boilerplate inflation", () => {
+  const original = "Buat REST API untuk pengguna.";
+  const beforeAnalysis = analyzePrompt(original);
+  assert.equal(typeof beforeAnalysis.beforeScore, "number");
+  assert.equal(typeof beforeAnalysis.afterScore, "number");
+  assert.equal(beforeAnalysis.beforeScore, beforeAnalysis.afterScore);
+  assert.equal(beforeAnalysis.scoreDelta, 0);
+
+  const boilerplateOnly = buildImprovedPrompt({ originalPrompt: original });
+  const evaluationWithBoilerplate = analyzePrompt(original, { improvedPrompt: boilerplateOnly });
+  assert.equal(evaluationWithBoilerplate.beforeScore, beforeAnalysis.beforeScore);
+  assert.equal(evaluationWithBoilerplate.afterScore, beforeAnalysis.beforeScore);
+  assert.equal(evaluationWithBoilerplate.scoreDelta, 0);
+  assert.match(evaluationWithBoilerplate.summary, /boilerplate/i);
+
+  const withUserDetails = buildImprovedPrompt({
+    originalPrompt: original,
+    context: "Proyek internal menggunakan Express dan PostgreSQL.",
+    constraints: "Wajib sanitasi input dan gunakan bcrypt.",
+    successCriteria: "Lulus test suite integritas."
+  });
+  const evaluationWithUserContent = analyzePrompt(original, {
+    context: "Proyek internal menggunakan Express dan PostgreSQL.",
+    constraints: "Wajib sanitasi input dan gunakan bcrypt.",
+    successCriteria: "Lulus test suite integritas.",
+    improvedPrompt: withUserDetails
+  });
+  assert.ok(evaluationWithUserContent.afterScore > evaluationWithUserContent.beforeScore);
+  assert.ok(evaluationWithUserContent.scoreDelta > 0);
+  assert.equal(evaluationWithUserContent.scoreDelta, evaluationWithUserContent.afterScore - evaluationWithUserContent.beforeScore);
+});
+
+test("direct user edits in improved prompt are evaluated while template boilerplate is ignored", () => {
+  const original = "Tulis artikel tentang kopi.";
+  const baseBuilt = buildImprovedPrompt({ originalPrompt: original });
+  const manuallyEdited = baseBuilt + "\n\n## Batasan tambahan pengguna\n- Maksimal 300 kata\n- Target audiens: barista pemula";
+  const result = analyzePrompt(original, { improvedPrompt: manuallyEdited });
+  assert.ok(result.afterScore > result.beforeScore);
+  assert.ok(result.scoreDelta > 0);
+});
+
+test("JSON export includes before and after scores", () => {
+  const payload = createExportPayload({
+    originalPrompt: "Buat API.",
+    settings: {},
+    improvedPrompt: "# Prompt",
+    analysis: { score: 75, beforeScore: 40, afterScore: 75, scoreDelta: 35, qualityLabel: "Bagus", dimensions: [] }
+  });
+  assert.equal(payload.analysis.beforeScore, 40);
+  assert.equal(payload.analysis.afterScore, 75);
+  assert.equal(payload.analysis.scoreDelta, 35);
+});
+

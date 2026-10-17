@@ -120,65 +120,6 @@ function qualityLabel(score) {
   if (score >= 40) return "Masih bisa dibuat lebih jelas";
   return "Instruksi masih sangat ringkas";
 }
-export function analyzePrompt(originalPrompt, settings = {}) {
-  const original = String(originalPrompt ?? "").trim();
-  if (!original) return {
-    score: 0, wordCount: 0, taskType: "general", taskLabel: "Umum", qualityLabel: "Belum ada prompt",
-    summary: "Tulis permintaan terlebih dahulu untuk melihat saran.",
-    dimensions: DIMENSION_DEFINITIONS.map((item) => ({ ...item, score: 0, detail: "Masukkan prompt untuk menilai aspek ini." })),
-    strengths: [], recommendations: [], missing: [], warnings: []
-  };
-  const normalizedSettings = {
-    objective: String(settings.objective ?? ""), context: String(settings.context ?? ""), audience: String(settings.audience ?? ""),
-    constraints: String(settings.constraints ?? ""), outputFormat: settings.outputFormat ?? "auto", successCriteria: String(settings.successCriteria ?? "")
-  };
-  const combined = [original, normalizedSettings.objective, normalizedSettings.context, normalizedSettings.audience, normalizedSettings.constraints, normalizedSettings.successCriteria].filter(hasValue).join("\n");
-  const task = inferTaskType(original);
-  const words = countWords(original);
-  const intentScore = hasValue(normalizedSettings.objective) ? 100 : ACTION_PATTERN.test(original) ? 85 : words >= 12 ? 60 : 35;
-  const contextScore = getEvidenceScore(normalizedSettings.context || normalizedSettings.audience, combined, CONTEXT_PATTERN, 25, 60);
-  const constraintsScore = getEvidenceScore(normalizedSettings.constraints, combined, CONSTRAINT_PATTERN, 20, 65);
-  const formatScore = normalizedSettings.outputFormat !== "auto" ? 100 : FORMAT_PATTERN.test(original) ? 80 : 25;
-  const criteriaScore = getEvidenceScore(normalizedSettings.successCriteria, combined, CRITERIA_PATTERN, 20, 70);
-  const inputScore = hasSourceMaterial(original) || /\[\[.+?\]\]/s.test(original) ? 95 : words >= 15 ? 65 : words >= 7 ? 50 : 30;
-  const scores = { intent: intentScore, context: contextScore, constraints: constraintsScore, format: formatScore, criteria: criteriaScore, input: inputScore };
-  const details = {
-    intent: intentScore >= 80 ? "Tindakan atau hasil utama cukup terlihat." : "Tambahkan tindakan atau hasil yang kamu harapkan bila maksudnya belum jelas.",
-    context: contextScore >= 80 ? "Konteks atau audiens sudah disediakan." : contextScore >= 50 ? "Ada petunjuk konteks; tambahkan detail hanya jika berpengaruh pada hasil." : "Konteks tambahan bersifat opsional, kecuali tugas bergantung pada proyek atau data tertentu.",
-    constraints: constraintsScore >= 80 ? "Batasan eksplisit terdeteksi." : constraintsScore >= 50 ? "Beberapa batasan terdeteksi; cek apakah aturan penting sudah jelas." : "Tambahkan batasan bila ada hal yang wajib dipertahankan atau dihindari.",
-    format: formatScore >= 80 ? "Format keluaran ditentukan atau terdeteksi." : "Kamu bisa membiarkan format otomatis atau memilih bentuk jawaban yang dibutuhkan.",
-    criteria: criteriaScore >= 80 ? "Kriteria atau persyaratan hasil terdeteksi." : criteriaScore >= 50 ? "Ada sinyal kriteria; buat lebih spesifik jika hasil harus diuji." : "Kriteria rinci hanya perlu ditambahkan bila hasil harus memenuhi syarat tertentu.",
-    input: inputScore >= 80 ? "Materi sumber memiliki penanda atau batas yang jelas." : "Jika ada teks, data, atau kode untuk diproses, pisahkan dari instruksi."
-  };
-  const dimensions = DIMENSION_DEFINITIONS.map((item) => ({ ...item, score: scores[item.id], detail: details[item.id] }));
-  const score = Math.round(dimensions.reduce((total, dimension) => total + dimension.score, 0) / dimensions.length);
-  const recommendations = dimensions.filter((dimension) => dimension.score < 60).map((dimension) => ({ id: dimension.id, label: dimension.label, detail: dimension.detail })).slice(0, 3);
-  const strengths = dimensions.filter((dimension) => dimension.score >= 80).map((dimension) => dimension.label);
-  const warnings = detectConflicts(original, normalizedSettings);
-  return {
-    score, wordCount: words, taskType: task?.id ?? "general", taskLabel: task?.label ?? "Umum", qualityLabel: qualityLabel(score),
-    summary: score >= 85
-      ? "Struktur permintaan sudah memiliki banyak unsur penting. Skor ini hanya panduan struktur, bukan ukuran kebenaran atau kualitas jawaban AI."
-      : score >= 60
-        ? "Permintaan sudah cukup terbaca. Ambil saran yang relevan saja; tidak semua kolom perlu diisi."
-        : "Permintaan bisa diperjelas, tetapi prompt singkat pun dapat bekerja baik untuk tugas sederhana.",
-    dimensions, strengths, recommendations, missing: findMissingInfo(original, normalizedSettings), warnings
-  };
-}
-function asBulletList(value) {
-  return String(value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-    .map((line) => /^[-*•]\s/.test(line) ? line : "- " + line).join("\n");
-}
-function appendSection(sections, title, content) {
-  if (hasValue(content)) sections.push("## " + title + "\n" + content.trim());
-}
-function isComplexTask(original, type, settings) {
-  const words = countWords(original);
-  const multipleActions = (String(original).match(/\b(?:dan|serta|kemudian|lalu|beserta|sekaligus|while|and then)\b/gi) ?? []).length >= 2;
-  const complexityTerms = /\b(lengkap|mendalam|detail|terperinci|step[- ]by[- ]step|langkah demi langkah|produksi|production|arsitektur|audit|komprehensif|comprehensive|multi[- ]step|end[- ]to[- ]end|ujung ke ujung)\b/i.test(original);
-  const processTask = ["coding", "research", "analysis", "planning", "extraction"].includes(type?.id);
-  return processTask || (words >= 24 && !isWellSpecified(original)) || multipleActions || complexityTerms || hasValue(settings.context) || hasValue(settings.constraints) || hasValue(settings.successCriteria);
-}
 const FORMAT_GUIDANCE = {
   auto: "",
   markdown: "Gunakan Markdown yang rapi. Tambahkan judul atau daftar hanya jika meningkatkan keterbacaan.",
@@ -198,6 +139,239 @@ const SIMPLE_TASK_GUIDANCE = {
   creative: ["Berikan ide yang relevan dan berbeda tanpa menambahkan batasan yang tidak diminta."],
   ideas: ["Prioritaskan opsi yang relevan dan dapat ditindaklanjuti."]
 };
+
+const GENERIC_CRITERIA_PATTERNS = [
+  /^-?\s*Jawab kebutuhan utama dan penuhi persyaratan eksplisit tanpa menambahkan tujuan baru\.?/i,
+  /^-?\s*Utamakan solusi yang dapat diuji;?\s*sebutkan pengujian relevan dan batasan yang belum diverifikasi\.?/i,
+  /^-?\s*Bedakan fakta yang didukung sumber, interpretasi, dan informasi yang belum terverifikasi\.?/i,
+  /^-?\s*Jangan menyajikan informasi yang tidak tersedia sebagai fakta;?\s*jelaskan asumsi penting secara singkat\.?/i,
+  /^-?\s*Periksa hasil terhadap persyaratan dan format sebelum finalisasi\.?/i
+];
+
+const GENERIC_SAFEGUARD_PATTERNS = [
+  /^-?\s*Pertahankan tujuan, fakta, angka, nama, persyaratan, dan batasan dari permintaan asli\.?/i,
+  /^-?\s*Jangan mengarang fakta, hasil pengujian, sumber, kemampuan alat, atau tindakan yang belum dilakukan\.?/i,
+  /^-?\s*Ajukan maksimal 3 pertanyaan klarifikasi hanya jika informasi yang hilang benar-benar mengubah hasil\.?/i,
+  /^-?\s*Lakukan pemeriksaan akhir terhadap kelengkapan, konsistensi, dan format;?\s*berikan ringkasan hasil yang berguna\.?/i
+];
+
+export function stripBoilerplate(text) {
+  const source = String(text ?? "").trim();
+  if (!source) return "";
+
+  const headingMatches = [...source.matchAll(/(?:^|\n)(#{1,3}\s+[^\n]+)/g)];
+  if (headingMatches.length === 0) {
+    const lines = source.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      return !GENERIC_SAFEGUARD_PATTERNS.some((p) => p.test(trimmed)) &&
+             !GENERIC_CRITERIA_PATTERNS.some((p) => p.test(trimmed));
+    });
+    return lines.join("\n").trim();
+  }
+
+  const sections = [];
+  for (let i = 0; i < headingMatches.length; i++) {
+    const heading = headingMatches[i][1].trim();
+    const headingStart = headingMatches[i].index + (headingMatches[i][0].startsWith("\n") ? 1 : 0);
+    if (i === 0 && headingStart > 0) {
+      const preamble = source.slice(0, headingStart).trim();
+      if (preamble) sections.push({ heading: "", body: preamble });
+    }
+    const bodyStart = headingStart + heading.length;
+    const nextStart = i + 1 < headingMatches.length
+      ? headingMatches[i + 1].index + (headingMatches[i + 1][0].startsWith("\n") ? 1 : 0)
+      : source.length;
+    const body = source.slice(bodyStart, nextStart).trim();
+    sections.push({ heading, body });
+  }
+
+  const userParts = [];
+  for (const { heading, body } of sections) {
+    if (/^#\s+Prompt yang Disempurnakan/i.test(heading)) {
+      continue;
+    }
+    if (/^##\s+(?:Peran|Pedoman|Langkah kerja|Penanganan materi sumber|Aturan pelaksanaan|Aturan revisi|Placeholder yang perlu diisi)\b/i.test(heading)) {
+      continue;
+    }
+    if (/^##\s+Format keluaran\b/i.test(heading)) {
+      const isStandard = Object.values(FORMAT_GUIDANCE).some((guidance) => guidance && body.includes(guidance));
+      if (isStandard) continue;
+      userParts.push(body);
+      continue;
+    }
+    if (/^##\s+Kriteria keberhasilan\b/i.test(heading)) {
+      const customBullets = body.split(/\r?\n/).filter((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+        return !GENERIC_CRITERIA_PATTERNS.some((p) => p.test(trimmed));
+      });
+      if (customBullets.length > 0) {
+        userParts.push(customBullets.join("\n"));
+      }
+      continue;
+    }
+    if (/^##\s+(?:Permintaan asli|Tujuan tambahan|Konteks|Target audiens|Batasan dan persyaratan|Arahan revisi tambahan|Konflik yang perlu diselesaikan)\b/i.test(heading)) {
+      if (body) userParts.push(body);
+      continue;
+    }
+    const lines = body.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      return !GENERIC_SAFEGUARD_PATTERNS.some((p) => p.test(trimmed)) &&
+             !GENERIC_CRITERIA_PATTERNS.some((p) => p.test(trimmed));
+    });
+    const cleaned = lines.join("\n").trim();
+    if (cleaned) userParts.push(heading ? (heading + "\n" + cleaned) : cleaned);
+  }
+
+  return userParts.join("\n\n").trim();
+}
+
+function calculateScoreDimensions(original, settings = {}, extraContent = "") {
+  const normalizedSettings = {
+    objective: String(settings.objective ?? ""),
+    context: String(settings.context ?? ""),
+    audience: String(settings.audience ?? ""),
+    constraints: String(settings.constraints ?? ""),
+    outputFormat: settings.outputFormat ?? "auto",
+    successCriteria: String(settings.successCriteria ?? "")
+  };
+  const pieces = [
+    original,
+    extraContent,
+    normalizedSettings.objective,
+    normalizedSettings.context,
+    normalizedSettings.audience,
+    normalizedSettings.constraints,
+    normalizedSettings.successCriteria
+  ].filter(hasValue);
+  const combined = pieces.join("\n");
+  const words = Math.max(countWords(original), countWords(extraContent || original));
+  const intentScore = hasValue(normalizedSettings.objective)
+    ? 100
+    : ACTION_PATTERN.test(combined)
+      ? 85
+      : words >= 12 ? 60 : 35;
+  const contextScore = getEvidenceScore(normalizedSettings.context || normalizedSettings.audience, combined, CONTEXT_PATTERN, 25, 60);
+  const constraintsScore = getEvidenceScore(normalizedSettings.constraints, combined, CONSTRAINT_PATTERN, 20, 65);
+  const formatScore = normalizedSettings.outputFormat !== "auto"
+    ? 100
+    : FORMAT_PATTERN.test(combined) ? 80 : 25;
+  const criteriaScore = getEvidenceScore(normalizedSettings.successCriteria, combined, CRITERIA_PATTERN, 20, 70);
+  const inputScore = hasSourceMaterial(combined) || /\[\[.+?\]\]/s.test(combined)
+    ? 95
+    : words >= 15 ? 65 : words >= 7 ? 50 : 30;
+
+  const scores = {
+    intent: intentScore,
+    context: contextScore,
+    constraints: constraintsScore,
+    format: formatScore,
+    criteria: criteriaScore,
+    input: inputScore
+  };
+
+  const details = {
+    intent: intentScore >= 80 ? "Tindakan atau hasil utama cukup terlihat." : "Tambahkan tindakan atau hasil yang kamu harapkan bila maksudnya belum jelas.",
+    context: contextScore >= 80 ? "Konteks atau audiens sudah disediakan." : contextScore >= 50 ? "Ada petunjuk konteks; tambahkan detail hanya jika berpengaruh pada hasil." : "Konteks tambahan bersifat opsional, kecuali tugas bergantung pada proyek atau data tertentu.",
+    constraints: constraintsScore >= 80 ? "Batasan eksplisit terdeteksi." : constraintsScore >= 50 ? "Beberapa batasan terdeteksi; cek apakah aturan penting sudah jelas." : "Tambahkan batasan bila ada hal yang wajib dipertahankan atau dihindari.",
+    format: formatScore >= 80 ? "Format keluaran ditentukan atau terdeteksi." : "Kamu bisa membiarkan format otomatis atau memilih bentuk jawaban yang dibutuhkan.",
+    criteria: criteriaScore >= 80 ? "Kriteria atau persyaratan hasil terdeteksi." : criteriaScore >= 50 ? "Ada sinyal kriteria; buat lebih spesifik jika hasil harus diuji." : "Kriteria rinci hanya perlu ditambahkan bila hasil harus memenuhi syarat tertentu.",
+    input: inputScore >= 80 ? "Materi sumber memiliki penanda atau batas yang jelas." : "Jika ada teks, data, atau kode untuk diproses, pisahkan dari instruksi."
+  };
+
+  const dimensions = DIMENSION_DEFINITIONS.map((item) => ({ ...item, score: scores[item.id], detail: details[item.id] }));
+  const score = Math.round(dimensions.reduce((total, dimension) => total + dimension.score, 0) / dimensions.length);
+  return { score, dimensions, scores, details, combined, words, normalizedSettings };
+}
+
+export function analyzePrompt(originalPrompt, settings = {}) {
+  let original = String(originalPrompt ?? "").trim();
+  if (original.includes("# Prompt yang Disempurnakan") || original.includes("## Permintaan asli")) {
+    original = stripBoilerplate(original);
+  }
+  if (!original) return {
+    score: 0,
+    beforeScore: 0,
+    afterScore: 0,
+    scoreDelta: 0,
+    wordCount: 0,
+    taskType: "general",
+    taskLabel: "Umum",
+    qualityLabel: "Belum ada prompt",
+    summary: "Tulis permintaan terlebih dahulu untuk melihat saran.",
+    dimensions: DIMENSION_DEFINITIONS.map((item) => ({ ...item, score: 0, detail: "Masukkan prompt untuk menilai aspek ini." })),
+    beforeDimensions: DIMENSION_DEFINITIONS.map((item) => ({ ...item, score: 0, detail: "Masukkan prompt untuk menilai aspek ini." })),
+    strengths: [],
+    recommendations: [],
+    missing: [],
+    warnings: []
+  };
+
+  const beforeCalculation = calculateScoreDimensions(original, {});
+  const beforeScore = beforeCalculation.score;
+
+  let userContent = "";
+  if (typeof settings.improvedPrompt === "string" && settings.improvedPrompt.trim()) {
+    userContent = stripBoilerplate(settings.improvedPrompt);
+  }
+  const afterCalculation = calculateScoreDimensions(original, settings, userContent);
+  const afterScore = afterCalculation.score;
+  const scoreDelta = afterScore - beforeScore;
+  const score = afterScore;
+
+  const task = inferTaskType(original);
+  const dimensions = afterCalculation.dimensions;
+  const recommendations = dimensions.filter((d) => d.score < 60).map((d) => ({ id: d.id, label: d.label, detail: d.detail })).slice(0, 3);
+  const strengths = dimensions.filter((d) => d.score >= 80).map((d) => d.label);
+  const warnings = detectConflicts(original, afterCalculation.normalizedSettings);
+
+  let summary;
+  if (scoreDelta > 0) {
+    summary = "Skor kelengkapan struktur meningkat dari " + beforeScore + " menjadi " + afterScore + " (+" + scoreDelta + ") berdasarkan detail yang kamu berikan. Penilaian hanya menghitung isi pengguna, bukan boilerplate.";
+  } else if (settings.improvedPrompt && scoreDelta === 0) {
+    summary = "Prompt telah disusun (" + afterScore + "/100). Skor belum meningkat karena belum ada konteks atau batasan tambahan dari pengguna (boilerplate template tidak dihitung).";
+  } else if (score >= 85) {
+    summary = "Struktur permintaan sudah memiliki banyak unsur penting. Skor ini hanya panduan struktur, bukan ukuran kebenaran atau kualitas jawaban AI.";
+  } else if (score >= 60) {
+    summary = "Permintaan sudah cukup terbaca. Ambil saran yang relevan saja; tidak semua kolom perlu diisi.";
+  } else {
+    summary = "Permintaan bisa diperjelas, tetapi prompt singkat pun dapat bekerja baik untuk tugas sederhana.";
+  }
+
+  return {
+    score,
+    beforeScore,
+    afterScore,
+    scoreDelta,
+    wordCount: afterCalculation.words,
+    taskType: task?.id ?? "general",
+    taskLabel: task?.label ?? "Umum",
+    qualityLabel: qualityLabel(score),
+    summary,
+    dimensions,
+    beforeDimensions: beforeCalculation.dimensions,
+    strengths,
+    recommendations,
+    missing: findMissingInfo(original, afterCalculation.normalizedSettings),
+    warnings
+  };
+}
+function asBulletList(value) {
+  return String(value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    .map((line) => /^[-*•]\s/.test(line) ? line : "- " + line).join("\n");
+}
+function appendSection(sections, title, content) {
+  if (hasValue(content)) sections.push("## " + title + "\n" + content.trim());
+}
+function isComplexTask(original, type, settings) {
+  const words = countWords(original);
+  const multipleActions = (String(original).match(/\b(?:dan|serta|kemudian|lalu|beserta|sekaligus|while|and then)\b/gi) ?? []).length >= 2;
+  const complexityTerms = /\b(lengkap|mendalam|detail|terperinci|step[- ]by[- ]step|langkah demi langkah|produksi|production|arsitektur|audit|komprehensif|comprehensive|multi[- ]step|end[- ]to[- ]end|ujung ke ujung)\b/i.test(original);
+  const processTask = ["coding", "research", "analysis", "planning", "extraction"].includes(type?.id);
+  return processTask || (words >= 24 && !isWellSpecified(original)) || multipleActions || complexityTerms || hasValue(settings.context) || hasValue(settings.constraints) || hasValue(settings.successCriteria);
+}
 export function buildImprovedPrompt(options = {}) {
   const original = String(options.originalPrompt ?? "").trim();
   if (!original) throw new Error("Prompt awal wajib diisi.");
@@ -262,9 +436,18 @@ export function createExportPayload({ originalPrompt, settings, improvedPrompt, 
   return {
     schemaVersion: 1, exportedAt: new Date().toISOString(), originalPrompt, settings, iterationNotes, improvedPrompt,
     analysis: {
-      score: analysis?.score ?? null, qualityLabel: analysis?.qualityLabel ?? null, taskType: analysis?.taskType ?? null,
-      taskLabel: analysis?.taskLabel ?? null, summary: analysis?.summary ?? null, strengths: analysis?.strengths ?? [],
-      recommendations: analysis?.recommendations ?? [], warnings: analysis?.warnings ?? [], dimensions: analysis?.dimensions ?? []
+      score: analysis?.score ?? null,
+      beforeScore: analysis?.beforeScore ?? analysis?.score ?? null,
+      afterScore: analysis?.afterScore ?? analysis?.score ?? null,
+      scoreDelta: analysis?.scoreDelta ?? 0,
+      qualityLabel: analysis?.qualityLabel ?? null,
+      taskType: analysis?.taskType ?? null,
+      taskLabel: analysis?.taskLabel ?? null,
+      summary: analysis?.summary ?? null,
+      strengths: analysis?.strengths ?? [],
+      recommendations: analysis?.recommendations ?? [],
+      warnings: analysis?.warnings ?? [],
+      dimensions: analysis?.dimensions ?? []
     },
     limitations: [
       "Structural heuristics provide suggestions about prompt clarity; they do not measure truth, reasoning quality, or model performance.",

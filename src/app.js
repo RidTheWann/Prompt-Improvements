@@ -221,17 +221,17 @@ async function runSelectedEngine() {
     return;
   }
   const settings = readSettings();
-  const analysis = analyzePrompt(originalPrompt, settings);
   let deterministicDraft;
   try { deterministicDraft = buildImprovedPrompt({ originalPrompt, ...settings }); }
   catch (error) {
     showToast(error instanceof Error ? error.message : "Prompt tidak dapat disusun.");
     return;
   }
-  renderAnalysis(analysis);
 
   if ($("engineMode").value !== "ai") {
     $("improvedPrompt").value = deterministicDraft;
+    const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: deterministicDraft });
+    renderAnalysis(analysis);
     updateWordCounts();
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
     showToast(iterationNotes.length
@@ -265,6 +265,8 @@ async function runSelectedEngine() {
     });
     $("improvedPrompt").value = refinedPrompt;
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
+    const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: refinedPrompt });
+    renderAnalysis(analysis);
     updateWordCounts();
     setLlmStatus("Selesai · prompt diproses oleh penyedia AI yang dipilih.", "success");
     showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
@@ -1021,10 +1023,11 @@ function applyWorkspaceBackup(backup) {
   $("downloadEvaluationButton").disabled = true;
   $("evalRunStatus").textContent = "Workspace dipulihkan. Jalankan evaluasi lagi untuk memeriksa prompt dan test case ini.";
   if (currentOriginal()) {
-    lastAnalysis = analyzePrompt(currentOriginal(), readSettings());
+    lastAnalysis = analyzePrompt(currentOriginal(), { ...readSettings(), improvedPrompt: $("improvedPrompt").value });
     renderAnalysis(lastAnalysis);
   } else {
     lastAnalysis = null;
+    $("scoreBeforeValue").textContent = "—";
     $("scoreValue").textContent = "—";
     $("scoreBar").style.width = "0%";
     $("dimensionList").replaceChildren();
@@ -1116,7 +1119,10 @@ function wordCount(value) {
 
 function renderAnalysis(analysis) {
   lastAnalysis = analysis;
-  $("scoreValue").textContent = analysis.score;
+  if ($("scoreBeforeValue")) {
+    $("scoreBeforeValue").textContent = (analysis.beforeScore !== null && analysis.beforeScore !== undefined) ? analysis.beforeScore : "—";
+  }
+  $("scoreValue").textContent = (analysis.afterScore !== null && analysis.afterScore !== undefined) ? analysis.afterScore : analysis.score;
   $("scoreBar").style.width = analysis.score + "%";
   $("scoreSummary").textContent = analysis.summary || "Saran ini menilai kelengkapan struktur, bukan kebenaran jawaban AI.";
   $("resultStatus").textContent = analysis.wordCount ? "Analisis selesai" : "Menunggu input";
@@ -1184,7 +1190,8 @@ function analyzeCurrentPrompt() {
     $("originalPrompt").focus();
     return null;
   }
-  const analysis = analyzePrompt(original, readSettings());
+  const improvedPrompt = $("improvedPrompt").value.trim();
+  const analysis = analyzePrompt(original, { ...readSettings(), improvedPrompt });
   renderAnalysis(analysis);
   return analysis;
 }
@@ -1197,10 +1204,10 @@ function buildCurrentPrompt() {
     return null;
   }
   const settings = readSettings();
-  const analysis = analyzePrompt(original, settings);
   try {
     const prompt = buildImprovedPrompt({ originalPrompt: original, ...settings });
     $("improvedPrompt").value = prompt;
+    const analysis = analyzePrompt(original, { ...settings, improvedPrompt: prompt });
     renderAnalysis(analysis);
     updateWordCounts();
     $("resultStatus").textContent = "Prompt disusun";
@@ -1420,6 +1427,7 @@ function clearWorkspace() {
   $("improvedPrompt").value = "";
   iterationNotes = [];
   lastAnalysis = null;
+  $("scoreBeforeValue").textContent = "—";
   $("scoreValue").textContent = "—";
   $("scoreBar").style.width = "0%";
   $("scoreSummary").textContent = "Masukkan prompt, lalu jalankan analisis untuk melihat aspek yang perlu diperjelas.";
@@ -1443,7 +1451,14 @@ function clearWorkspace() {
 }
 
 $("originalPrompt").addEventListener("input", updateWordCounts);
-$("improvedPrompt").addEventListener("input", updateWordCounts);
+$("improvedPrompt").addEventListener("input", () => {
+  updateWordCounts();
+  const original = currentOriginal();
+  if (original && lastAnalysis) {
+    const analysis = analyzePrompt(original, { ...readSettings(), improvedPrompt: $("improvedPrompt").value.trim() });
+    renderAnalysis(analysis);
+  }
+});
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
 $("improveButton").addEventListener("click", runSelectedEngine);
 $("checkLlmButton").addEventListener("click", checkLlmConnection);

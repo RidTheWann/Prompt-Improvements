@@ -27,6 +27,13 @@ test("beginner flow uses progressive disclosure and an obvious primary action", 
   }
 });
 
+test("score card provides before and after comparison indicators for user content", () => {
+  assert.match(html, /id="scoreBeforeValue"/);
+  assert.match(html, /id="scoreValue"/);
+  assert.match(html, /Menilai isi pengguna, bukan boilerplate/);
+  assert.match(app, /\$\("scoreBeforeValue"\)/);
+});
+
 test("initial copy and download actions are disabled until a prompt is generated", () => {
   assert.match(html, /id="copyButton"[^>]*disabled/);
   assert.match(html, /id="downloadButton"[^>]*disabled/);
