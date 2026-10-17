@@ -274,7 +274,7 @@ async function readStreamResponse(response, kind, signal, onChunk) {
     }
   } finally {
     signal?.removeEventListener("abort", onAbort);
-    if (receivedDoneMarker) onAbort();
+    onAbort();
     try {
       reader.releaseLock();
     } catch { /* ignore */ }
