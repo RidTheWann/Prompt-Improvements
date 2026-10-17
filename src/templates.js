@@ -43,6 +43,33 @@ export const PROMPT_TEMPLATES = [
     prompt: "Berikan 10 ide untuk [tujuan].",
     constraints: "Ide harus realistis dan bisa dimulai dengan modal kecil",
     outputFormat: "table"
+  },
+  {
+    id: "plan",
+    label: "Buat rencana",
+    icon: "🗓️",
+    prompt: "Buat rencana langkah demi langkah untuk [tujuan] dengan target waktu [jangka waktu].",
+    audience: "Pemula yang butuh arahan praktis",
+    constraints: "Urutkan langkah menurut prioritas\nJangan mengasumsikan sumber daya yang belum disebutkan",
+    outputFormat: "checklist"
+  },
+  {
+    id: "research",
+    label: "Riset topik",
+    icon: "🔎",
+    prompt: "Riset [topik] berdasarkan sumber tepercaya dan jelaskan temuan utamanya.",
+    objective: "Ringkasan bukti yang dapat diverifikasi dan mudah dipahami.",
+    constraints: "Cantumkan sumber dan tanggal bila tersedia\nPisahkan fakta, inferensi, dan hal yang belum pasti",
+    outputFormat: "markdown"
+  },
+  {
+    id: "compare",
+    label: "Bandingkan opsi",
+    icon: "⚖️",
+    prompt: "Bandingkan [opsi A] dan [opsi B] berdasarkan kebutuhan dan kriteria yang relevan.",
+    objective: "Rekomendasi dengan alasan dan trade-off yang jelas.",
+    constraints: "Jangan mengarang data harga atau spesifikasi\nNyatakan informasi yang belum tersedia",
+    outputFormat: "table"
   }
 ];
 

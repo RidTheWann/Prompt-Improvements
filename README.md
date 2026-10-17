@@ -1,6 +1,6 @@
 # Prompt Improvements
 
-A local-first, zero-API-cost workbench for turning rough prompts into clearer, testable instructions through iterative refinement.
+A guided prompt builder with an adaptive deterministic engine and optional AI refinement. The default path works in the browser without an API key; advanced evaluation remains available when repeatable testing is needed.
 
 ## Why this project exists
 
@@ -35,13 +35,19 @@ The project uses Node.js built-in test runner and has no runtime dependencies:
 npm test
 ```
 
+## Prompt engine behavior
+
+The deterministic engine classifies common task intents and adapts the structure instead of forcing one template onto every request. Simple tasks stay concise; complex tasks can receive tailored steps, success criteria, source-data boundaries, and conflict warnings. Scores are heuristic indicators only, not measures of factual accuracy or model quality. The engine treats missing optional details as optional and reserves clarification questions for information that would materially change the result.
+
+The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, and response-truncation detection. Browser-to-provider requests depend on each provider's key, quota, and CORS behavior. Avoid storing API keys on shared devices and do not submit sensitive data to external providers unless authorized.
+
 ## What "continuous improvement" means here
 
-1. Start with a rough prompt.
-2. Inspect the structural analysis and identify weak dimensions.
-3. Add only the context and constraints that genuinely apply.
-4. Generate a structured version and compare it with the original.
-5. Save an iteration, test it against real tasks, and refine it again.
+1. Start with one sentence or choose a starter example.
+2. Generate a prompt; adding extra details is optional.
+3. Review the result and copy it into your preferred AI assistant.
+4. Add context or feedback only when the first result needs refinement.
+5. Use advanced evaluation and saved versions when repeatable comparison matters.
 
 The deterministic engine does not infer missing domain knowledge or guarantee better answers. AI mode adds semantic rewriting with a model you connect via API key, but its output still needs review and evaluation against representative test cases.
 
