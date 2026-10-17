@@ -106,6 +106,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .score-number { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 .score-number span { font-size: 30px; letter-spacing: -.055em; line-height: 1; font-weight: 760; color: #c5dcff; }
 .score-number small { font-size: 11px; color: #8594a8; }
+.score-comparison { display: flex; align-items: center; gap: 10px; }
+.score-pill { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.score-pill-label { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+.score-arrow { color: #5c6c82; font-size: 14px; font-weight: 700; }
+.score-number-muted span { font-size: 22px; color: #879ab3; }
+.score-number-muted small { color: #627083; }
 .score-track { height: 5px; border-radius: 99px; background: #313b49; overflow: hidden; margin: 16px 0 10px; }
 .score-fill { width: 0; height: 100%; background: linear-gradient(90deg, #6e9fe5, #afd4ff); border-radius: 99px; transition: width .25s; }
 .score-summary { color: #aeb9c8; font-size: 11px; line-height: 1.6; }

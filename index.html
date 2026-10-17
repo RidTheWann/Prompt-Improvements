@@ -193,9 +193,19 @@
             <div class="score-topline">
               <div>
                 <span class="muted-label">Kelengkapan struktur</span>
-                <div class="score-caption">Sinyal heuristik, bukan skor kebenaran</div>
+                <div class="score-caption">Menilai isi pengguna, bukan boilerplate</div>
               </div>
-              <div class="score-number"><span id="scoreValue">—</span><small id="scoreSuffix">/100</small></div>
+              <div class="score-comparison">
+                <div class="score-pill score-before">
+                  <span class="score-pill-label">Sebelum</span>
+                  <div class="score-number score-number-muted"><span id="scoreBeforeValue">—</span><small>/100</small></div>
+                </div>
+                <span class="score-arrow" aria-hidden="true">→</span>
+                <div class="score-pill score-after">
+                  <span class="score-pill-label">Sesudah</span>
+                  <div class="score-number"><span id="scoreValue">—</span><small id="scoreSuffix">/100</small></div>
+                </div>
+              </div>
             </div>
             <div class="score-track"><div id="scoreBar" class="score-fill"></div></div>
             <div id="scoreSummary" class="score-summary">Saran ini membantu memperjelas struktur; skor bukan ukuran kebenaran jawaban AI.</div>
