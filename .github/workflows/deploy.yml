@@ -15,7 +15,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    name: Run tests before deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Run tests
+        run: npm test
   deploy:
+    needs: test
     name: Build and deploy static workbench
     runs-on: ubuntu-latest
     environment:
@@ -33,6 +46,7 @@ jobs:
           mkdir -p dist/src
           cp index.html styles.css manifest.webmanifest icon.svg service-worker.js dist/
           cp src/app.js src/prompt-engine.js src/llm-client.js src/evaluation.js src/optimizer.js src/workspace.js src/templates.js dist/src/
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}/" dist/service-worker.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
