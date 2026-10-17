@@ -122,6 +122,7 @@ try {
   assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
   await page.locator("#resetButton").click();
+  await page.locator("#engineMode").selectOption("rules");
 
   await page.locator('button[data-template="learn"]').click();
   assert.match(await page.locator("#originalPrompt").inputValue(), /\[topik\]/);
