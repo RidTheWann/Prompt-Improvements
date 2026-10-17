@@ -65,3 +65,84 @@ test("rewrite meta-prompt and engine add roles, steps, placeholders, and clarifi
   assert.match(built, /pertanyaan klarifikasi/);
   assert.ok(findMissingInfo("Tulis email ke [nama]", {}).length >= 2);
 });
+
+
+test("model discovery follows Gemini pagination and removes duplicate model IDs", async () => {
+  configureConnection({ provider: "gemini", apiKey: "g-key" });
+  const model = (name) => ({ name: "models/" + name, supportedGenerationMethods: ["generateContent"] });
+  const calls = mockFetch((url) => url.includes("pageToken=page-2")
+    ? ok({ models: [model("gem-b"), model("gem-a")] })
+    : ok({ models: [model("gem-a")], nextPageToken: "page-2" }));
+
+  assert.deepEqual(await listModels(""), ["gem-a", "gem-b"]);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.includes("pageToken=page-2"));
+});
+
+test("Anthropic model discovery follows a bounded before_id cursor", async () => {
+  configureConnection({ provider: "anthropic", apiKey: "sk-test" });
+  const calls = mockFetch((url) => url.includes("before_id=claude-1")
+    ? ok({ data: [{ id: "claude-2" }], has_more: false })
+    : ok({ data: [{ id: "claude-1" }], has_more: true }));
+
+  assert.deepEqual(await listModels(""), ["claude-1", "claude-2"]);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.includes("before_id=claude-1"));
+});
+
+test("provider transport retries a transient 503 only once", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  let attempts = 0;
+  const calls = mockFetch(() => {
+    attempts += 1;
+    if (attempts === 1) {
+      return { ok: false, status: 503, headers: new Headers({ "retry-after": "0" }), json: async () => ({}) };
+    }
+    return ok({ data: [{ id: "model-a" }] });
+  });
+
+  assert.deepEqual(await listModels(""), ["model-a"]);
+  assert.equal(calls.length, 2);
+});
+
+test("rate-limit retry observes abort signals instead of waiting indefinitely", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const controller = new AbortController();
+  const calls = mockFetch(() => ({
+    ok: false,
+    status: 429,
+    headers: new Headers({ "retry-after": "5" }),
+    json: async () => ({ error: { message: "rate limited" } })
+  }));
+  const abortTimer = setTimeout(() => controller.abort(), 15);
+  try {
+    await assert.rejects(listModels("", { signal: controller.signal }), (error) => error?.name === "AbortError");
+    assert.equal(calls.length, 1);
+  } finally {
+    clearTimeout(abortTimer);
+  }
+});
+
+test("truncated model output gives a clear recovery message", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  mockFetch(() => ok({ choices: [{ message: { content: "Incomplete prompt" }, finish_reason: "length" }] }));
+  await assert.rejects(
+    improvePromptWithAI({ baseUrl: "", model: "model-a", originalPrompt: "Buat rencana", structuredDraft: "draft" }),
+    /Output model terpotong/
+  );
+});
+
+test("provider error details do not disclose bearer credentials", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  mockFetch(() => ({
+    ok: false,
+    status: 500,
+    headers: new Headers(),
+    json: async () => ({ error: { message: "upstream failed for Bearer sk-12345678901234567890 api_key=topsecret" } })
+  }));
+  await assert.rejects(listModels(""), (error) => {
+    assert.match(error.message, /upstream failed/);
+    assert.doesNotMatch(error.message, /sk-12345678901234567890|topsecret/);
+    return true;
+  });
+});
