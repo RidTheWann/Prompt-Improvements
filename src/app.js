@@ -153,10 +153,13 @@ function updateProviderFields() {
 
 function updateEngineLabel() {
   const useAi = $("engineMode").value === "ai";
-  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Perbaiki prompt";
-  if (!useAi) setLlmStatus("Mode struktur bekerja tanpa API key.");
+  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
+  $("privacyModeNote").textContent = useAi
+    ? "Mode AI mengirim isi prompt dan konteks ke penyedia yang kamu pilih. API key digunakan langsung dari browser; key tidak masuk ke backup. Gunakan key dengan batas pengeluaran dan hindari data sensitif."
+    : "Mode gratis menyusun prompt langsung di browser tanpa API key atau biaya token. Tidak ada permintaan AI yang dikirim sampai kamu memilih Mode AI.";
+  if (!useAi) setLlmStatus("Mode gratis aktif · tidak membutuhkan API key.");
   else if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
-  else setLlmStatus("Masukkan API key, lalu klik Cek koneksi & model.");
+  else setLlmStatus("Untuk memakai AI, masukkan API key lalu cek koneksi.");
 }
 
 async function checkLlmConnection() {
@@ -209,7 +212,8 @@ async function runSelectedEngine() {
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
     showToast(iterationNotes.length
       ? "Iterasi struktur diperbarui. Prompt awal dan seluruh catatan tetap dipertahankan."
-      : "Prompt terstruktur berhasil dibuat. Tinjau dan sesuaikan sebelum digunakan.");
+      : "Prompt berhasil dibuat. Tinjau sebentar, lalu salin ke AI pilihanmu.");
+    revealOutputPanel();
     return;
   }
 
@@ -222,7 +226,7 @@ async function runSelectedEngine() {
   button.disabled = true;
   $("improveButtonText").textContent = "AI sedang bekerja...";
   $("resultStatus").textContent = "Mengirim prompt ke model...";
-  setLlmStatus("Model sedang memproses di komputer ini. Waktu respons bergantung pada model dan perangkat.");
+  setLlmStatus("Mengirim prompt ke penyedia AI yang dipilih. Waktu respons bergantung pada model dan koneksi.");
   try {
     const baseUrl = endpointValue();
     const model = $("llmModel").value.trim();
@@ -238,8 +242,9 @@ async function runSelectedEngine() {
     $("improvedPrompt").value = refinedPrompt;
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
     updateWordCounts();
-    setLlmStatus("Selesai · prompt diproses oleh model.", "success");
-    showToast("Prompt disempurnakan oleh AI. Periksa hasil sebelum digunakan.");
+    setLlmStatus("Selesai · prompt diproses oleh penyedia AI yang dipilih.", "success");
+    showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
+    revealOutputPanel();
   } catch (error) {
     $("resultStatus").textContent = "AI gagal";
     const message = error?.name === "AbortError"
@@ -1053,19 +1058,31 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3100);
 }
 
+function revealOutputPanel() {
+  const panel = $("outputPanel");
+  panel.classList.add("has-result");
+  if (window.matchMedia("(max-width: 900px)").matches) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function currentOriginal() {
   return $("originalPrompt").value.trim();
 }
 
 function updateWordCounts() {
   const originalWords = wordCount(currentOriginal());
+  const output = $("improvedPrompt").value;
   $("wordCount").textContent = originalWords + " kata";
   $("inputHint").textContent = originalWords === 0
-    ? "Mulai dari instruksi yang sudah kamu punya."
+    ? "Satu kalimat sudah cukup. Detail tambahan bersifat opsional."
     : originalWords < 8
-      ? "Prompt singkat bisa bekerja, tetapi mungkin perlu konteks."
-      : "Konteks hanya perlu ditambah jika memang relevan.";
-  $("resultWordCount").textContent = wordCount($("improvedPrompt").value) + " kata";
+      ? "Tidak perlu membuat prompt panjang jika tugasnya sederhana."
+      : "Tambahkan detail hanya jika benar-benar berpengaruh pada hasil.";
+  $("resultWordCount").textContent = wordCount(output) + " kata";
+  $("copyButton").disabled = !output.trim();
+  $("downloadButton").disabled = !output.trim();
+  $("saveButton").disabled = !output.trim() || !currentOriginal();
+  $("exportJsonButton").disabled = !output.trim() || !currentOriginal();
+  $("outputPanel").classList.toggle("has-result", Boolean(output.trim()));
 }
 
 function wordCount(value) {
@@ -1077,12 +1094,34 @@ function renderAnalysis(analysis) {
   lastAnalysis = analysis;
   $("scoreValue").textContent = analysis.score;
   $("scoreBar").style.width = analysis.score + "%";
-  $("scoreSummary").textContent = analysis.score >= 80
-    ? "Struktur tampak lengkap menurut sinyal yang diperiksa. Tetap uji hasilnya pada kasus nyata."
-    : analysis.score >= 55
-      ? "Struktur sudah memiliki beberapa unsur penting. Periksa aspek dengan nilai rendah sebelum memakai prompt."
-      : "Masih ada beberapa unsur struktur yang bisa diperjelas. Lengkapi hanya informasi yang benar-benar diketahui.";
+  $("scoreSummary").textContent = analysis.summary || "Saran ini menilai kelengkapan struktur, bukan kebenaran jawaban AI.";
   $("resultStatus").textContent = analysis.wordCount ? "Analisis selesai" : "Menunggu input";
+  const highlights = $("analysisHighlights");
+  if (highlights) {
+    highlights.replaceChildren();
+    const task = document.createElement("p");
+    task.className = "analysis-task-chip";
+    task.textContent = "Jenis tugas terdeteksi: " + (analysis.taskLabel || "Umum");
+    highlights.append(task);
+    for (const warningText of (analysis.warnings || [])) {
+      const warning = document.createElement("p");
+      warning.className = "analysis-warning";
+      warning.textContent = warningText;
+      highlights.append(warning);
+    }
+    if ((analysis.recommendations || []).length) {
+      const heading = document.createElement("strong");
+      heading.className = "analysis-recommendation-heading";
+      heading.textContent = "Yang bisa diperjelas (pilih yang relevan)";
+      const list = document.createElement("ul");
+      for (const item of analysis.recommendations) {
+        const row = document.createElement("li");
+        row.textContent = item.label + ": " + item.detail;
+        list.append(row);
+      }
+      highlights.append(heading, list);
+    }
+  }
 
   const list = $("dimensionList");
   list.replaceChildren();
@@ -1492,6 +1531,8 @@ function applyTemplate(id) {
 
 function setAdvancedMode(enabled, persist = true) {
   $("evaluationSection").hidden = !enabled;
+  document.body.classList.toggle("advanced-mode", enabled);
+  if (enabled) $("engineSettings").open = true;
   $("advancedToggle").setAttribute("aria-pressed", String(enabled));
   $("advancedToggle").textContent = enabled ? "Mode lanjutan: aktif" : "Mode lanjutan";
   if (!persist) return;
