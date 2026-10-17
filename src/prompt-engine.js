@@ -55,6 +55,9 @@ function isWellSpecified(text) {
 
 export function inferTaskType(text) {
   const source = String(text ?? "");
+  if (MAKE_PATTERN.test(source) && (STRONG_CODE_PATTERN.test(source) || (WEAK_CODE_PATTERN.test(source) && CODE_LANGUAGE_PATTERN.test(source)))) {
+    return TASK_TYPES.find((item) => item.id === "coding") ?? null;
+  }
   const explicitIntents = [
     ["translation", /\b(terjemah(?:kan)?|translate|translation|alih bahasa)\b/i],
     ["extraction", /\b(ekstrak|extract|ambil data|parse|klasifikasikan|klasifikasi data|labeli|petakan field)\b/i],
