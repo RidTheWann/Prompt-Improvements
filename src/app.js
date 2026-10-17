@@ -24,6 +24,7 @@ let llmModels = [];
 let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
 let activeOptimizationController = null;
+let activeAiController = null;
 
 const fields = [
   "originalPrompt",
@@ -213,7 +214,17 @@ async function checkLlmConnection() {
   }
 }
 
+function cancelAiImprovement() {
+  if (activeAiController) {
+    const error = new Error("Pembuatan prompt dengan AI dibatalkan.");
+    error.name = "AbortError";
+    activeAiController.abort(error);
+  }
+}
+
 async function runSelectedEngine() {
+  if (activeAiController) return;
+
   const originalPrompt = currentOriginal();
   if (!originalPrompt) {
     showToast("Isi prompt awal terlebih dahulu.");
@@ -244,13 +255,18 @@ async function runSelectedEngine() {
   const previousOutput = $("improvedPrompt").value.trim();
   const draftToImprove = iterationNotes.length > 0 && previousOutput ? previousOutput : deterministicDraft;
   const button = $("improveButton");
+  const cancelButton = $("cancelImproveButton");
   const previousButtonLabel = $("improveButtonText").textContent;
-  let controller;
   let timeoutId;
   button.disabled = true;
+  cancelButton.hidden = false;
+  cancelButton.disabled = false;
   $("improveButtonText").textContent = "AI sedang bekerja...";
   $("resultStatus").textContent = "Mengirim prompt ke model...";
   setLlmStatus("Mengirim prompt ke penyedia AI yang dipilih. Waktu respons bergantung pada model dan koneksi.");
+  $("improvedPrompt").value = "";
+  updateWordCounts();
+
   try {
     const baseUrl = endpointValue();
     const model = $("llmModel").value.trim();
@@ -258,10 +274,28 @@ async function runSelectedEngine() {
       throw new Error("Cek koneksi dan pilih model yang terpasang sebelum memakai AI.");
     }
     saveLlmConfig();
-    controller = new AbortController();
-    timeoutId = window.setTimeout(() => controller.abort(), 240000);
+    activeAiController = new AbortController();
+    timeoutId = window.setTimeout(() => {
+      if (activeAiController) {
+        const timeoutErr = new Error("Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas.");
+        timeoutErr.name = "TimeoutError";
+        activeAiController.abort(timeoutErr);
+      }
+    }, 240000);
+
     const refinedPrompt = await improvePromptWithAI({
-      baseUrl, model, originalPrompt, structuredDraft: draftToImprove, settings, signal: controller.signal
+      baseUrl,
+      model,
+      originalPrompt,
+      structuredDraft: draftToImprove,
+      settings,
+      signal: activeAiController.signal,
+      onChunk: (_chunk, accumulated) => {
+        $("improvedPrompt").value = accumulated;
+        $("resultStatus").textContent = "Menerima respons AI...";
+        updateWordCounts();
+        revealOutputPanel();
+      }
     });
     $("improvedPrompt").value = refinedPrompt;
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
@@ -272,20 +306,38 @@ async function runSelectedEngine() {
     showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
     revealOutputPanel();
   } catch (error) {
-    $("resultStatus").textContent = "AI gagal";
-    const message = error?.name === "AbortError"
-      ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
-      : error instanceof Error ? error.message : "AI gagal menyempurnakan prompt.";
-    setLlmStatus(message, "error");
-    if (!$("improvedPrompt").value.trim()) {
-      $("improvedPrompt").value = deterministicDraft;
+    const isTimeout = error?.name === "TimeoutError" || activeAiController?.signal?.reason?.name === "TimeoutError";
+    const isAbort = (error?.name === "AbortError" || activeAiController?.signal?.aborted) && !isTimeout;
+
+    if (isAbort) {
+      $("resultStatus").textContent = "AI dibatalkan";
+      setLlmStatus("Pembuatan prompt dengan AI dibatalkan.", "neutral");
+      showToast("Pembuatan prompt dengan AI dibatalkan.");
+    } else {
+      $("resultStatus").textContent = "AI gagal";
+      const message = isTimeout
+        ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
+        : error instanceof Error ? error.message : "AI gagal menyempurnakan prompt.";
+      setLlmStatus(message, "error");
+      showToast(message);
+    }
+
+    const currentOutput = $("improvedPrompt").value.trim();
+    if (!currentOutput) {
+      $("improvedPrompt").value = draftToImprove;
+      updateWordCounts();
+    } else {
+      const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: currentOutput });
+      renderAnalysis(analysis);
       updateWordCounts();
     }
-    showToast(message);
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
+    activeAiController = null;
     button.disabled = false;
     $("improveButtonText").textContent = previousButtonLabel;
+    cancelButton.hidden = true;
+    cancelButton.disabled = true;
   }
 }
 
@@ -1461,6 +1513,7 @@ $("improvedPrompt").addEventListener("input", () => {
 });
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
 $("improveButton").addEventListener("click", runSelectedEngine);
+$("cancelImproveButton").addEventListener("click", cancelAiImprovement);
 $("checkLlmButton").addEventListener("click", checkLlmConnection);
 $("addEvalCaseButton").addEventListener("click", addEvaluationCase);
 $("runEvaluationButton").addEventListener("click", runEvaluationSuite);

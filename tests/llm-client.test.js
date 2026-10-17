@@ -146,3 +146,171 @@ test("provider error details do not disclose bearer credentials", async () => {
     return true;
   });
 });
+
+function sseResponse(events) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const event of events) {
+        controller.enqueue(encoder.encode(event + "\n\n"));
+      }
+      controller.close();
+    }
+  });
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: stream,
+    json: async () => { throw new Error("Stream response should not call json()"); }
+  };
+}
+
+test("OpenAI/OpenRouter SSE streaming invokes onChunk and accumulates text", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const chunks = [];
+  const calls = mockFetch(() => sseResponse([
+    'data: {"choices":[{"delta":{"content":"Halo "}}]}',
+    'data: {"choices":[{"delta":{"content":"dunia!"}}]}',
+    'data: [DONE]'
+  ]));
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "test-model",
+    originalPrompt: "test",
+    structuredDraft: "draft",
+    onChunk: (chunk, acc) => chunks.push({ chunk, acc })
+  });
+  assert.equal(result, "Halo dunia!");
+  assert.equal(calls[0].options.headers.Accept, "text/event-stream, application/json");
+  const requestBody = JSON.parse(calls[0].options.body);
+  assert.equal(requestBody.stream, true);
+  assert.deepEqual(chunks, [
+    { chunk: "Halo ", acc: "Halo " },
+    { chunk: "dunia!", acc: "Halo dunia!" }
+  ]);
+});
+
+test("Anthropic SSE streaming parses content_block_delta text", async () => {
+  configureConnection({ provider: "anthropic", apiKey: "sk-ant" });
+  const chunks = [];
+  const calls = mockFetch(() => sseResponse([
+    'data: {"type":"message_start","message":{"id":"msg_1"}}',
+    'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Claude "}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"stream"}}',
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}',
+    'data: {"type":"message_stop"}'
+  ]));
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "claude-3",
+    originalPrompt: "test",
+    structuredDraft: "draft",
+    onChunk: (chunk, acc) => chunks.push({ chunk, acc })
+  });
+  assert.equal(result, "Claude stream");
+  const requestBody = JSON.parse(calls[0].options.body);
+  assert.equal(requestBody.stream, true);
+  assert.deepEqual(chunks, [
+    { chunk: "Claude ", acc: "Claude " },
+    { chunk: "stream", acc: "Claude stream" }
+  ]);
+});
+
+test("Gemini SSE streaming uses correct stream endpoint and parses candidate parts", async () => {
+  configureConnection({ provider: "gemini", apiKey: "g-key" });
+  const chunks = [];
+  const calls = mockFetch(() => sseResponse([
+    'data: {"candidates":[{"content":{"parts":[{"text":"Gemini "}]}}]}',
+    'data: {"candidates":[{"content":{"parts":[{"text":"streaming"}]}}]}'
+  ]));
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "gem-model",
+    originalPrompt: "test",
+    structuredDraft: "draft",
+    onChunk: (chunk, acc) => chunks.push({ chunk, acc })
+  });
+  assert.equal(result, "Gemini streaming");
+  assert.ok(calls[0].url.includes(":streamGenerateContent?alt=sse"));
+  assert.deepEqual(chunks, [
+    { chunk: "Gemini ", acc: "Gemini " },
+    { chunk: "streaming", acc: "Gemini streaming" }
+  ]);
+});
+
+test("Streaming respects abort signal and terminates immediately", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const controller = new AbortController();
+  const encoder = new TextEncoder();
+  let cancelledStream = false;
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      ctrl.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Awal..."}}]}\n\n'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ctrl.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Lanjutan"}}]}\n\n'));
+      ctrl.close();
+    },
+    cancel() {
+      cancelledStream = true;
+    }
+  });
+  mockFetch(() => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: stream,
+    json: async () => ({})
+  }));
+
+  const abortTimer = setTimeout(() => controller.abort(), 10);
+  try {
+    await assert.rejects(
+      improvePromptWithAI({
+        baseUrl: "",
+        model: "m",
+        originalPrompt: "x",
+        structuredDraft: "y",
+        signal: controller.signal,
+        onChunk: () => {}
+      }),
+      (err) => err?.name === "AbortError"
+    );
+    assert.equal(cancelledStream, true);
+  } finally {
+    clearTimeout(abortTimer);
+  }
+});
+
+test("improvePromptWithAI with onChunk falls back cleanly if body is non-streaming", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const chunks = [];
+  mockFetch(() => ok({ choices: [{ message: { content: "Hasil non-stream" } }] }));
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "m",
+    originalPrompt: "x",
+    structuredDraft: "y",
+    onChunk: (chunk, acc) => chunks.push({ chunk, acc })
+  });
+  assert.equal(result, "Hasil non-stream");
+  assert.deepEqual(chunks, [{ chunk: "Hasil non-stream", acc: "Hasil non-stream" }]);
+});
+
+test("Streaming catches finish_reason length and raises actionable error", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  mockFetch(() => sseResponse([
+    'data: {"choices":[{"delta":{"content":"Sebagian teks"},"finish_reason":"length"}]}'
+  ]));
+  await assert.rejects(
+    improvePromptWithAI({
+      baseUrl: "",
+      model: "m",
+      originalPrompt: "x",
+      structuredDraft: "y",
+      onChunk: () => {}
+    }),
+    /Output model terpotong karena batas token/
+  );
+});

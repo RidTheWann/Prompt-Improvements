@@ -41,15 +41,27 @@ function requireKey(baseUrl) {
   if (!local) throw new Error("Masukkan API key terlebih dahulu.");
 }
 
-function headers(kind) {
-  const base = { "Content-Type": "application/json", Accept: "application/json" };
+function headers(kind, shouldStream = false) {
+  const base = {
+    "Content-Type": "application/json",
+    Accept: shouldStream ? "text/event-stream, application/json" : "application/json"
+  };
   if (kind === "anthropic") return { ...base, "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
   if (kind === "gemini") return { ...base, "x-goog-api-key": connection.apiKey };
   return connection.apiKey ? { ...base, Authorization: "Bearer " + connection.apiKey } : base;
 }
 
 export function stripReasoning(text) {
-  return String(text ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return String(text ?? "")
+    .replace(/^<think>[\s\S]*?(?:<\/think>|$)\s*/i, "")
+    .replace(/<think>[\s\S]*?<\/think>\s*/gi, "");
+}
+
+export function cleanOutputDraft(text) {
+  let cleaned = stripReasoning(text);
+  cleaned = cleaned.replace(/^```(?:markdown|text)?\s*\n/i, "");
+  cleaned = cleaned.replace(/\n```$/i, "");
+  return cleaned;
 }
 
 function createAbortError(signal) {
@@ -175,36 +187,132 @@ function extractTextParts(parts) {
   }).join("");
 }
 
-async function complete({ baseUrl, model, messages, temperature, maxTokens, signal }) {
-  const url = normalizeEndpoint(baseUrl);
-  const name = String(model ?? "").trim();
-  if (!name) throw new Error("Pilih model terlebih dahulu.");
-  requireKey(url);
-  if (messages.reduce((sum, message) => sum + String(message.content ?? "").length, 0) > MAX_CHARS) {
-    throw new Error("Input terlalu besar (maksimal 60.000 karakter). Ringkas lalu coba lagi.");
+async function readStreamResponse(response, kind, signal, onChunk) {
+  const reader = response.body.getReader();
+  const onAbort = () => {
+    try { reader.cancel(); } catch { /* ignore */ }
+  };
+  if (signal?.aborted) {
+    onAbort();
+    throw createAbortError(signal);
+  }
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let accumulated = "";
+  let finishReason = "";
+
+  try {
+    while (true) {
+      if (signal?.aborted) throw createAbortError(signal);
+      const { done, value } = await reader.read();
+      if (signal?.aborted) throw createAbortError(signal);
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith(":")) continue;
+        if (line.startsWith("data:")) {
+          const dataStr = line.slice(5).trim();
+          if (dataStr === "[DONE]") break;
+          try {
+            const data = JSON.parse(dataStr);
+            let chunkText = "";
+            if (kind === "anthropic") {
+              if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+                chunkText = data.delta.text ?? "";
+              } else if (data.type === "message_delta" && data.delta?.stop_reason) {
+                finishReason = String(data.delta.stop_reason).toLowerCase();
+              }
+            } else if (kind === "gemini") {
+              const part = data.candidates?.[0]?.content?.parts?.[0];
+              if (typeof part?.text === "string") chunkText = part.text;
+              if (data.candidates?.[0]?.finishReason) {
+                finishReason = String(data.candidates[0].finishReason).toLowerCase();
+              }
+            } else {
+              const choice = data.choices?.[0];
+              if (typeof choice?.delta?.content === "string") {
+                chunkText = choice.delta.content;
+              } else if (Array.isArray(choice?.delta?.content)) {
+                chunkText = extractTextParts(choice.delta.content);
+              }
+              if (choice?.finish_reason) {
+                finishReason = String(choice.finish_reason).toLowerCase();
+              }
+            }
+
+            if (chunkText) {
+              accumulated += chunkText;
+              onChunk(chunkText, accumulated);
+            }
+          } catch {
+            // Incomplete or non-JSON chunk
+          }
+        }
+      }
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch { /* ignore */ }
   }
 
-  const { kind } = PROVIDERS[connection.provider];
-  const system = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
-  const turns = messages.filter((message) => message.role !== "system");
-  let target;
-  let body;
-  if (kind === "anthropic") {
-    target = url + "/v1/messages";
-    body = { model: name, max_tokens: maxTokens, temperature, ...(system && { system }), messages: turns };
-  } else if (kind === "gemini") {
-    target = url + "/v1beta/models/" + encodeURIComponent(name) + ":generateContent";
-    body = {
-      ...(system && { systemInstruction: { parts: [{ text: system }] } }),
-      contents: turns.map((message) => ({ role: "user", parts: [{ text: message.content }] })),
-      generationConfig: { temperature, maxOutputTokens: maxTokens }
-    };
-  } else {
-    target = url + "/chat/completions";
-    body = { model: name, temperature, messages };
+  if (["max_tokens", "max_tokens_exceeded", "length", "maxtokens"].includes(finishReason)) {
+    throw new Error("Output model terpotong karena batas token. Pilih model dengan kapasitas lebih besar atau ringkas permintaan.");
+  }
+  const clean = stripReasoning(accumulated);
+  if (!clean) throw new Error("Model tidak mengembalikan teks yang dapat digunakan. Periksa model atau coba lagi.");
+  return clean;
+}
+
+async function executeCompletion(url, options, { kind, shouldStream, onChunk, signal }, attempt = 0) {
+  const label = PROVIDERS[connection.provider].label;
+  let response;
+  try {
+    response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", ...options });
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) throw createAbortError(signal);
+    throw new Error("Tidak dapat menghubungi " + label + ". Periksa koneksi, endpoint, dan izin CORS penyedia. Prompt hanya dikirim setelah kamu memilih mode AI.");
   }
 
-  const payload = await request(target, { method: "POST", headers: headers(kind), body: JSON.stringify(body), signal });
+  if ((response.status === 429 || response.status === 503) && attempt === 0) {
+    const header = Number(response.headers?.get?.("retry-after"));
+    const waitSeconds = Number.isFinite(header) && header >= 0 ? Math.min(8, header) : 1.5;
+    await waitForRetry(waitSeconds * 1000, signal);
+    return executeCompletion(url, options, { kind, shouldStream, onChunk, signal }, 1);
+  }
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const errBody = await response.json();
+      detail = errBody?.error?.message ?? errBody?.message ?? "";
+    } catch { /* non-JSON error */ }
+
+    if (response.status === 401 || response.status === 403) throw new Error("API key ditolak oleh " + label + ". Periksa key, izin, saldo, dan akses modelnya.");
+    if (response.status === 404) throw new Error("Model atau endpoint tidak ditemukan. Cek koneksi dan pilih model yang tersedia.");
+    if (response.status === 429) throw new Error("Batas permintaan atau kuota " + label + " tercapai. Tunggu sebentar atau periksa akun penyedia.");
+    if (response.status === 413) throw new Error("Permintaan terlalu besar untuk endpoint yang dipilih. Ringkas materi sumber lalu coba lagi.");
+    throw new Error(label + " mengembalikan HTTP " + response.status + (detail ? ": " + sanitizeProviderDetail(detail) : ""));
+  }
+
+  if (shouldStream && response.body && typeof response.body.getReader === "function") {
+    return readStreamResponse(response, kind, signal, onChunk);
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Respons penyedia AI bukan JSON yang valid.");
+  }
+
   let responseText = "";
   let finishReason = "";
   if (kind === "anthropic") {
@@ -227,7 +335,43 @@ async function complete({ baseUrl, model, messages, temperature, maxTokens, sign
   }
   const clean = stripReasoning(responseText);
   if (!clean) throw new Error("Model tidak mengembalikan teks yang dapat digunakan. Periksa model atau coba lagi.");
+  if (shouldStream && typeof onChunk === "function") {
+    onChunk(clean, clean);
+  }
   return clean;
+}
+
+async function complete({ baseUrl, model, messages, temperature, maxTokens, signal, onChunk }) {
+  const url = normalizeEndpoint(baseUrl);
+  const name = String(model ?? "").trim();
+  if (!name) throw new Error("Pilih model terlebih dahulu.");
+  requireKey(url);
+  if (messages.reduce((sum, message) => sum + String(message.content ?? "").length, 0) > MAX_CHARS) {
+    throw new Error("Input terlalu besar (maksimal 60.000 karakter). Ringkas lalu coba lagi.");
+  }
+
+  const { kind } = PROVIDERS[connection.provider];
+  const system = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
+  const turns = messages.filter((message) => message.role !== "system");
+  const shouldStream = typeof onChunk === "function";
+  let target;
+  let body;
+  if (kind === "anthropic") {
+    target = url + "/v1/messages";
+    body = { model: name, max_tokens: maxTokens, temperature, ...(system && { system }), messages: turns, ...(shouldStream && { stream: true }) };
+  } else if (kind === "gemini") {
+    target = url + (shouldStream ? "/v1beta/models/" + encodeURIComponent(name) + ":streamGenerateContent?alt=sse" : "/v1beta/models/" + encodeURIComponent(name) + ":generateContent");
+    body = {
+      ...(system && { systemInstruction: { parts: [{ text: system }] } }),
+      contents: turns.map((message) => ({ role: "user", parts: [{ text: message.content }] })),
+      generationConfig: { temperature, maxOutputTokens: maxTokens }
+    };
+  } else {
+    target = url + "/chat/completions";
+    body = { model: name, temperature, messages, ...(shouldStream && { stream: true }) };
+  }
+
+  return executeCompletion(target, { method: "POST", headers: headers(kind, shouldStream), body: JSON.stringify(body), signal }, { kind, shouldStream, onChunk, signal });
 }
 
 function payloadOf({ originalPrompt, structuredDraft, settings = {} }) {
@@ -259,8 +403,21 @@ export function createImprovementMessages(options = {}) {
 }
 
 export async function improvePromptWithAI(options = {}) {
-  const text = await complete({ baseUrl: options.baseUrl, model: options.model, messages: createImprovementMessages(options), temperature: 0.2, maxTokens: 4096, signal: options.signal });
-  return text.replace(/^```(?:markdown|text)?\s*\n([\s\S]*?)\n```$/i, "$1").trim();
+  const onChunk = typeof options.onChunk === "function"
+    ? (chunk, accumulated) => {
+        options.onChunk(chunk, cleanOutputDraft(accumulated));
+      }
+    : undefined;
+  const text = await complete({
+    baseUrl: options.baseUrl,
+    model: options.model,
+    messages: createImprovementMessages(options),
+    temperature: 0.2,
+    maxTokens: 4096,
+    signal: options.signal,
+    onChunk
+  });
+  return cleanOutputDraft(text).trim();
 }
 
 export async function runPromptTask(options = {}) {
