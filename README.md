@@ -41,6 +41,13 @@ The deterministic engine classifies common task intents and adapts the structure
 
 The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, and response-truncation detection. Browser-to-provider requests depend on each provider's key, quota, and CORS behavior. Avoid storing API keys on shared devices and do not submit sensitive data to external providers unless authorized.
 
+## Rujukan desain dan keamanan
+
+- [OpenAI — Prompt engineering](https://developers.openai.com/api/docs/guides/prompt-engineering): instruksi eksplisit, format keluaran, delimiter, serta evaluasi iteratif.
+- [Anthropic — Prompt templates and variables](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-templates-and-variables): batas konteks dan instruksi yang konsisten melalui tag yang jelas.
+- [Google Gemini — Prompt design strategies](https://ai.google.dev/gemini-api/docs/prompting-strategies): instruksi langsung, delimiter konsisten, dan parameter keluaran yang eksplisit.
+- [OWASP — HTML5 Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html): jangan menganggap browser storage sebagai tempat aman untuk kredensial.
+
 ## What "continuous improvement" means here
 
 1. Start with one sentence or choose a starter example.
@@ -59,7 +66,7 @@ Mode **AI via API key** meminta model menulis ulang prompt-mu dengan meta-prompt
 2. Tempel API key lalu klik **Cek koneksi & model**; daftar model diambil langsung dari penyedia sehingga tidak ada nama model usang.
 3. Klik **Sempurnakan dengan AI**.
 
-Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). Key hanya disimpan di sessionStorage, atau di localStorage bila kamu mengaktifkan **Ingat key**, dan tidak pernah masuk ke backup/ekspor. Siapa pun yang punya akses ke browser ini dapat membacanya, jadi gunakan key dengan batas pengeluaran. OpenAI langsung dari browser dapat diblokir CORS; gunakan OpenRouter atau proxy sendiri via endpoint kustom. Jika koneksi gagal, mode struktur tetap bisa dipakai.
+Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). API key hanya ada di memori halaman yang aktif; key tidak disimpan ke localStorage/sessionStorage dan tidak masuk ke backup atau ekspor. Setelah halaman dimuat ulang, masukkan key kembali. Skrip atau ekstensi yang berjalan di halaman tetap berpotensi mengakses key selama digunakan, jadi pakai key dengan batas pengeluaran dan hindari perangkat bersama. OpenAI langsung dari browser dapat diblokir CORS; gunakan penyedia yang mendukung akses browser atau endpoint kustom yang tepercaya. Jika koneksi gagal, mode struktur tetap bisa dipakai.
 
 ## Deploy to GitHub Pages
 

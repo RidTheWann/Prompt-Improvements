@@ -69,17 +69,38 @@ function loadHistory() {
 const KEY_SESSION = "prompt-improvements.api-key.session";
 const KEY_PERSIST = "prompt-improvements.api-key.persist";
 
+function clearLegacyApiKeys() {
+  try {
+    sessionStorage.removeItem(KEY_SESSION);
+    localStorage.removeItem(KEY_PERSIST);
+  } catch {
+    // Storage may be disabled; the API key remains memory-only regardless.
+  }
+}
+
 function loadLlmConfig() {
-  const fallback = { provider: "openrouter", baseUrl: "", model: "", remember: false };
+  const fallback = { provider: "openrouter", baseUrl: "", model: "" };
+  clearLegacyApiKeys();
   try {
     const stored = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || "{}");
-    return { provider: PROVIDERS[stored.provider] ? stored.provider : fallback.provider, baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "", model: typeof stored.model === "string" ? stored.model : "", remember: stored.remember === true };
-  } catch { return fallback; }
+    const clean = {
+      provider: PROVIDERS[stored.provider] ? stored.provider : fallback.provider,
+      baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "",
+      model: typeof stored.model === "string" ? stored.model : ""
+    };
+    // Migrate old settings and make sure no legacy "remember key" flag remains.
+    try { localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(clean)); } catch { /* Optional setting only. */ }
+    return clean;
+  } catch {
+    return fallback;
+  }
 }
 
 function readStoredKey() {
-  try { return sessionStorage.getItem(KEY_SESSION) || localStorage.getItem(KEY_PERSIST) || ""; } catch { return ""; }
+  clearLegacyApiKeys();
+  return "";
 }
+
 
 function endpointValue() {
   configureConnection({ provider: $("llmProvider").value, apiKey: $("llmApiKey").value });
@@ -87,15 +108,23 @@ function endpointValue() {
 }
 
 function saveLlmConfig() {
-  llmConfig = { provider: $("llmProvider").value, baseUrl: $("llmEndpoint").value.trim(), model: $("llmModel").value.trim(), remember: $("llmRemember").checked };
+  llmConfig = {
+    provider: $("llmProvider").value,
+    baseUrl: $("llmEndpoint").value.trim(),
+    model: $("llmModel").value.trim()
+  };
   const key = $("llmApiKey").value.trim();
+  // The provider key remains in the active page/module memory only. Remove
+  // credentials saved by older versions and never write a key to web storage.
+  clearLegacyApiKeys();
+  configureConnection({ provider: llmConfig.provider, apiKey: key });
   try {
     localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(llmConfig));
-    sessionStorage.removeItem(KEY_SESSION);
-    localStorage.removeItem(KEY_PERSIST);
-    if (key) (llmConfig.remember ? localStorage : sessionStorage).setItem(llmConfig.remember ? KEY_PERSIST : KEY_SESSION, key);
-  } catch { showToast("Pengaturan tidak bisa disimpan oleh browser. Kamu tetap bisa melanjutkan sesi ini."); }
+  } catch {
+    showToast("Preferensi tidak dapat disimpan oleh browser. Kamu tetap bisa memakai sesi ini.");
+  }
 }
+
 
 function setLlmStatus(message, tone = "neutral") {
   const status = $("llmStatus");
@@ -134,7 +163,6 @@ function initializeLlmSettings() {
   }
   $("llmProvider").value = llmConfig.provider;
   $("llmEndpoint").value = llmConfig.baseUrl;
-  $("llmRemember").checked = llmConfig.remember;
   $("llmApiKey").value = readStoredKey();
   if (llmConfig.model) {
     const option = document.createElement("option");
@@ -944,7 +972,7 @@ function applyWorkspaceBackup(backup) {
   const next = new Map([
     [STORAGE_KEY, JSON.stringify(backup.history)],
     [EVAL_CASES_KEY, JSON.stringify(backup.evaluationCases)],
-    [LLM_CONFIG_KEY, JSON.stringify({ provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember })]
+    [LLM_CONFIG_KEY, JSON.stringify({ provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model })]
   ]);
   try {
     for (const [key, value] of next) localStorage.setItem(key, value);
@@ -963,7 +991,7 @@ function applyWorkspaceBackup(backup) {
   savedVersions = backup.history;
   evaluationCases = backup.evaluationCases;
   iterationNotes = [...backup.workspace.iterationNotes];
-  llmConfig = { provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember };
+  llmConfig = { provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model };
   llmModels = [];
   for (const id of fields) $(id).value = backup.workspace.fields[id] ?? "";
   $("improvedPrompt").value = backup.workspace.fields.improvedPrompt ?? "";
@@ -1460,7 +1488,6 @@ $("llmProvider").addEventListener("change", () => {
   setLlmStatus("Penyedia diganti. Masukkan API key lalu cek koneksi.");
 });
 $("llmApiKey").addEventListener("change", saveLlmConfig);
-$("llmRemember").addEventListener("change", saveLlmConfig);
 $("llmModel").addEventListener("change", saveLlmConfig);
 $("llmEndpoint").addEventListener("change", () => {
   llmModels = [];

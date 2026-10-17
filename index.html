@@ -151,11 +151,7 @@
               <label class="field-label" for="llmApiKey">API key</label>
               <input id="llmApiKey" class="text-input" type="password" placeholder="Tempel API key" spellcheck="false" autocomplete="off">
             </div>
-            <label class="toggle-row" for="llmRemember">
-              <span><strong>Ingat key di perangkat ini</strong><small>Nonaktif: key hanya bertahan selama tab terbuka.</small></span>
-              <input id="llmRemember" type="checkbox">
-              <span class="toggle-track" aria-hidden="true"></span>
-            </label>
+            <p class="key-memory-note">Key hanya berada di memori halaman aktif dan akan hilang saat halaman dimuat ulang. Untuk keamanan, key tidak disimpan pada localStorage atau sessionStorage.</p>
             <div class="field">
               <label class="field-label" for="llmModel">Model</label>
               <select id="llmModel" class="text-input"><option value="">Cek koneksi untuk memuat model</option></select>

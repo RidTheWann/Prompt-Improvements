@@ -46,3 +46,11 @@ test("privacy copy differentiates local structure mode from provider AI mode", (
   assert.match(app, /Mode gratis menyusun prompt langsung di browser/);
   assert.match(app, /Mode AI mengirim isi prompt dan konteks ke penyedia/);
 });
+
+
+test("API keys are memory-only and never persisted in browser storage", async () => {
+  assert.doesNotMatch(html, /id="llmRemember"/);
+  assert.match(html, /key-memory-note/);
+  assert.match(app, /clearLegacyApiKeys\(\)/);
+  assert.doesNotMatch(app, /(?:localStorage|sessionStorage)\.setItem\((?:KEY_SESSION|KEY_PERSIST)/);
+});
