@@ -42,8 +42,25 @@ function countWords(value) {
 }
 export function inferTaskType(text) {
   const source = String(text ?? "");
+  const explicitIntents = [
+    ["translation", /\b(terjemah(?:kan)?|translate|translation|alih bahasa)\b/i],
+    ["extraction", /\b(ekstrak|extract|ambil data|parse|klasifikasikan|klasifikasi data|labeli|petakan field)\b/i],
+    ["summary", /\b(ringkas|rangkum|ringkasan|merangkum|summari[sz]e|summary|intisari|tl;?dr)\b/i],
+    ["research", /\b(riset|penelitian|research|cari sumber|sumber terbaru|fact.?check|verifikasi fakta|tinjauan literatur)\b/i],
+    ["planning", /\b(rencana(?:kan)?|jadwal(?:kan)?|buat rencana|roadmap|planning|milestone|timeline|strategi|sprint|prioritas kerja)\b/i],
+    ["analysis", /\b(analisis|analisa|bandingkan|evaluasi|compare|analy[sz]e|assess|audit|diagnosis masalah)\b/i],
+    ["learning", /\b(jelaskan|ajarkan|belajar|explain|tutorial|pahami|pengertian|cara kerja|how to|teach me|from scratch)\b/i],
+    ["creative", /\b(brainstorm|brainstorming|ide nama|nama brand|nama merek|slogan|tagline|konsep cerita|creative)\b/i],
+    ["writing", /\b(tulis email|tulis artikel|surel|surat|email|caption|pidato|proposal|copywriting|postingan|blog|resume|cv|deskripsi produk|siaran pers)\b/i],
+    ["ideas", /\b(sarankan|rekomendasi|rekomendasikan|pilihan terbaik|best choice|suggest|recommend)\b/i],
+    ["coding", /\b(debug|perbaiki bug|refactor|implementasikan|implementasi|deploy|buat.{0,35}\b(api|kode|code|script|program|aplikasi|website|fungsi|query|database)\b|build.{0,35}\b(api|app|application|website|script|program|function|query)\b|fix.{0,25}\b(bug|code|api|app)\b)\b/i]
+  ];
+  for (const [id, pattern] of explicitIntents) {
+    if (pattern.test(source)) return TASK_TYPES.find((item) => item.id === id) ?? null;
+  }
   return TASK_TYPES.find((item) => item.pattern.test(source)) ?? null;
 }
+
 function hasSourceMaterial(text) {
   const source = String(text ?? "");
   return INPUT_PATTERN.test(source) ||

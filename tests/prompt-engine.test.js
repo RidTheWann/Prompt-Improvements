@@ -27,8 +27,8 @@ test("task classification recognizes common Indonesian and English intents", () 
   const cases = [
     ["Buat REST API untuk pengguna", "coding"], ["Rangkum artikel ini menjadi lima poin", "summary"],
     ["Terjemahkan email ini ke bahasa Inggris", "translation"], ["Riset sumber terbaru soal baterai sodium-ion", "research"],
-    ["Buat rencana belajar Python 30 hari", "coding"], ["Bandingkan dua laptop berdasarkan harga dan performa", "analysis"],
-    ["Tulis email profesional untuk pelanggan", "writing"], ["Jelaskan konsep API kepada pemula", "coding"],
+    ["Buat rencana belajar Python 30 hari", "planning"], ["Bandingkan dua laptop berdasarkan harga dan performa", "analysis"],
+    ["Tulis email profesional untuk pelanggan", "writing"], ["Jelaskan konsep API kepada pemula", "learning"],
     ["Ekstrak nama dan tanggal dari teks lalu keluarkan JSON", "extraction"], ["Brainstorm nama brand kopi", "creative"]
   ];
   for (const [prompt, expected] of cases) assert.equal(inferTaskType(prompt)?.id, expected, prompt);
