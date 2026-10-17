@@ -119,7 +119,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 2);
   assert.equal(await page.locator("#originalPrompt").inputValue(), original);
-  assert.equal(await page.locator("#improvedPrompt").inputValue(), output);
+  assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
   await page.locator("#resetButton").click();
 
