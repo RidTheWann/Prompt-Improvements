@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101319">
-  <meta name="description" content="Workbench lokal untuk menyusun, menganalisis, dan menyempurnakan prompt secara iteratif tanpa server perantara.">
-  <title>Prompt Improvements — Workbench</title>
+  <meta name="description" content="Perjelas instruksi untuk AI. Susun prompt secara gratis di browser, dengan AI opsional.">
+  <title>Prompt Improvements — Buat prompt yang lebih jelas</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
@@ -18,42 +18,44 @@
         <span class="brand-mark" aria-hidden="true">P<span>+</span></span>
         <span class="brand-copy">
           <strong>Prompt Improvements</strong>
-          <small>Prompt engineering workbench</small>
+          <small>Asisten penyusun prompt</small>
         </span>
       </a>
-      <div class="topbar-status"><span class="status-dot"></span> Privat · API key milikmu
+      <div class="topbar-status"><span class="status-dot"></span> Gratis · tanpa akun
         <button id="advancedToggle" class="button button-quiet button-small" type="button" aria-pressed="false">Mode lanjutan</button></div>
     </header>
 
     <main>
       <section class="hero">
-        <div class="eyebrow"><span class="eyebrow-line"></span> PERBAIKI PROMPT-MU</div>
-        <h1>Prompt biasa.<br><span>Instruksi yang lebih tajam.</span></h1>
-        <p>Ubah permintaan awal menjadi instruksi yang lebih jelas dan dapat dievaluasi. Perbaiki, uji, catat versi, lalu ulangi—tanpa server perantara.</p>
+        <div class="eyebrow"><span class="eyebrow-line"></span> BUAT INSTRUKSI LEBIH JELAS</div>
+        <h1>Biar AI lebih paham<br><span>apa yang kamu inginkan.</span></h1>
+        <p>Mulai dari satu kalimat. Kami bantu menyusunnya menjadi prompt yang lebih jelas, tanpa perlu memahami teknik prompt engineering.</p>
         <div class="hero-meta">
-          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Pemrosesan lokal</span>
-          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Analisis transparan</span>
-          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4"/><circle cx="10" cy="10" r="3.5"/></svg> Iterasi berkelanjutan</span>
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Bisa dimulai gratis</span>
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Hasil siap disalin</span>
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4"/><circle cx="10" cy="10" r="3.5"/></svg> Riwayat tersimpan di browser</span>
         </div>
       </section>
 
-      <section class="workspace" aria-label="Prompt workbench">
+      <section class="workspace" aria-label="Alur membuat prompt">
         <section class="panel input-panel">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">01 / INPUT</div>
-              <h2>Prompt awal</h2>
+              <div class="section-kicker">LANGKAH 1</div>
+              <h2>Mulai dari idemu</h2>
             </div>
             <button id="resetButton" class="button button-quiet button-small" type="button">Mulai baru</button>
           </div>
           <div class="template-picker" role="group" aria-label="Mulai cepat dengan contoh">
-            <span class="muted-label">Mulai cepat:</span>
+            <span class="muted-label">Atau coba contoh:</span>
             <div id="templateList" class="template-list"></div>
           </div>
-          <label class="field-label" for="originalPrompt">Tulis prompt yang ingin diperbaiki <span class="required">*</span></label>
-          <textarea id="originalPrompt" class="textarea prompt-input" rows="6" placeholder="Contoh: Buat REST API untuk mengelola data pengguna dengan Python." spellcheck="true"></textarea>
-          <div class="input-foot"><span id="wordCount">0 kata</span><span id="inputHint">Mulai dari instruksi yang sudah kamu punya.</span></div>
+          <label class="field-label" for="originalPrompt">Apa yang ingin kamu minta kepada AI? <span class="required">*</span></label>
+          <textarea id="originalPrompt" class="textarea prompt-input" rows="4" maxlength="60000" placeholder="Contoh: Bantu aku menulis email yang sopan untuk meminta jadwal ulang." spellcheck="true" aria-describedby="inputHint"></textarea>
+          <div class="input-foot"><span id="wordCount">0 kata</span><span id="inputHint">Satu kalimat sudah cukup. Detail tambahan bersifat opsional.</span></div>
 
+          <details class="guided-details" id="contextDetails">
+            <summary class="guided-summary"><span><strong>Tambah detail (opsional)</strong><small>Tujuan, konteks, audiens, batasan, atau format jawaban.</small></span><span class="summary-indicator" aria-hidden="true">+</span></summary>
           <div class="form-divider"></div>
           <div class="section-subhead">
             <h3>Perjelas konteks</h3>
@@ -99,6 +101,10 @@
             </div>
           </div>
 
+          </details>
+
+          <details class="guided-details engine-settings" id="engineSettings">
+            <summary class="guided-summary"><span><strong>Pengaturan tambahan</strong><small>Aturan kualitas dan koneksi AI opsional.</small></span><span class="summary-indicator" aria-hidden="true">+</span></summary>
           <div class="form-divider"></div>
           <div class="section-subhead">
             <h3>Aturan penyempurnaan</h3>
@@ -158,30 +164,34 @@
               <button id="checkLlmButton" class="button button-secondary" type="button">Cek koneksi &amp; model</button>
               <span id="llmStatus" class="ai-connection-status" data-tone="neutral">Mode struktur bekerja tanpa API key.</span>
             </div>
-            <p class="ai-local-note">API key dikirim langsung dari browsermu ke penyedia pilihanmu, tanpa server perantara, dan tidak pernah masuk ke backup atau ekspor. Pakai key dengan batas pengeluaran, dan jangan gunakan di komputer bersama. Akses langsung dari browser didukung Anthropic, Google Gemini, dan OpenRouter (juga untuk model GPT).</p>
+            <p id="privacyModeNote" class="ai-local-note">Mode gratis berjalan di browser dan tidak membutuhkan API key. Saat AI diaktifkan, prompt dikirim ke penyedia yang kamu pilih. Jangan gunakan key pada perangkat bersama atau memasukkan data sensitif.</p>
           </div>
+          </details>
+
           <div class="primary-actions">
-            <button id="analyzeButton" class="button button-secondary" type="button">
+            <button id="analyzeButton" class="button button-secondary advanced-only" type="button">
               <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4M6 8.5h5M8.5 6v5"/></svg>
               Analisis prompt
             </button>
             <button id="improveButton" class="button button-primary" type="button">
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 1.8 5.2L17 9l-5.2 1.8L10 16l-1.8-5.2L3 9l5.2-1.8L10 2Z"/><path d="m15.5 12.5.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg>
-              <span id="improveButtonText">Perbaiki prompt</span>
+              <span id="improveButtonText">Buat prompt yang lebih baik</span>
             </button>
           </div>
-          <p class="panel-footnote">Mesin awal memakai aturan deterministik. Ia memperjelas struktur, bukan menjamin kebenaran jawaban AI.</p>
+          <p class="panel-footnote">Mode gratis menyusun prompt langsung di browser. Prompt yang lebih jelas membantu, tetapi tidak menjamin jawaban AI selalu benar.</p>
         </section>
 
-        <section class="panel output-panel" aria-label="Analisis dan hasil">
+        <section class="panel output-panel" id="outputPanel" aria-label="Hasil prompt">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">02 / HASIL</div>
-              <h2>Analisis & hasil</h2>
+              <div class="section-kicker">LANGKAH 2</div>
+              <h2>Prompt hasil perbaikan</h2>
             </div>
             <span id="resultStatus" class="status-chip">Menunggu input</span>
           </div>
 
+          <details class="guided-details analysis-details" id="analysisDetails">
+            <summary class="guided-summary"><span><strong>Lihat analisis dan saran</strong><small>Indikator struktur, bukan skor kebenaran.</small></span><span class="summary-indicator" aria-hidden="true">+</span></summary>
           <div class="score-card">
             <div class="score-topline">
               <div>
@@ -191,7 +201,8 @@
               <div class="score-number"><span id="scoreValue">—</span><small id="scoreSuffix">/100</small></div>
             </div>
             <div class="score-track"><div id="scoreBar" class="score-fill"></div></div>
-            <div id="scoreSummary" class="score-summary">Masukkan prompt, lalu jalankan analisis untuk melihat aspek yang perlu diperjelas.</div>
+            <div id="scoreSummary" class="score-summary">Saran ini membantu memperjelas struktur; skor bukan ukuran kebenaran jawaban AI.</div>
+            <div id="analysisHighlights" class="analysis-highlights" aria-live="polite"></div>
           </div>
 
           <div class="dimension-list" id="dimensionList" aria-live="polite">
@@ -202,38 +213,43 @@
             </div>
           </div>
 
+          </details>
+
           <div class="result-divider"></div>
           <div class="result-heading">
             <div>
-              <h3>Prompt hasil penyempurnaan</h3>
-              <p>Hasil bisa kamu edit manual sebelum disalin atau disimpan.</p>
+              <h3>Prompt siap digunakan</h3>
+              <p>Salin dan tempel ke AI pilihanmu. Kamu juga bisa mengeditnya di sini.</p>
             </div>
             <span id="resultWordCount" class="count-chip">0 kata</span>
           </div>
-          <textarea id="improvedPrompt" class="textarea result-textarea" rows="12" placeholder="Hasil terstruktur akan muncul di sini..." spellcheck="true" aria-label="Prompt hasil penyempurnaan"></textarea>
+          <textarea id="improvedPrompt" class="textarea result-textarea" rows="12" placeholder="Prompt yang siap kamu salin akan muncul di sini setelah kamu menekan tombol di sebelah kiri." spellcheck="true" aria-label="Prompt hasil penyempurnaan"></textarea>
 
           <div class="result-actions">
-            <button id="copyButton" class="button button-secondary" type="button">
+            <button id="copyButton" class="button button-primary" type="button" disabled>
               <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H6"/></svg>
-              Salin
+              Salin prompt
             </button>
-            <button id="downloadButton" class="button button-secondary" type="button">Unduh .md</button>
-            <button id="saveButton" class="button button-primary" type="button">
+            <button id="downloadButton" class="button button-secondary" type="button" disabled>Unduh .md</button>
+            <button id="saveButton" class="button button-secondary" type="button" disabled>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 13v3h12v-3"/></svg>
               Simpan versi
             </button>
-            <button id="exportJsonButton" class="button button-quiet" type="button" aria-label="Ekspor versi sebagai JSON">JSON</button>
+            <button id="exportJsonButton" class="button button-quiet advanced-only" type="button" aria-label="Ekspor versi sebagai JSON" disabled>JSON</button>
           </div>
 
-          <div class="iteration-box">
+          <details class="guided-details iteration-details" id="iterationDetails">
+            <summary class="guided-summary"><span><strong>Perbaiki lagi dengan arahan tambahan</strong><small>Opsional, jika hasil pertama belum sesuai.</small></span><span class="summary-indicator" aria-hidden="true">+</span></summary>
+            <div class="iteration-box">
             <div class="iteration-title">
               <span class="iteration-icon" aria-hidden="true">↻</span>
               <div><h3>Iterasi berikutnya</h3><p>Catat kekurangan dari hasil tadi. Permintaan awal tetap dipertahankan.</p></div>
             </div>
             <label class="field-label" for="iterationFeedback">Feedback / perbaikan tambahan</label>
             <textarea id="iterationFeedback" class="textarea" rows="3" placeholder="Contoh: tambahkan test case, batasi output maksimal 200 kata, jangan ubah API yang ada..."></textarea>
-            <button id="iterateButton" class="button button-secondary button-wide" type="button">Perbaiki lagi dengan feedback ini <span aria-hidden="true">↗</span></button>
-          </div>
+            <button id="iterateButton" class="button button-secondary button-wide" type="button">Terapkan arahan tambahan <span aria-hidden="true">↗</span></button>
+            </div>
+          </details>
         </section>
       </section>
 
@@ -327,7 +343,7 @@
           <div>
             <div class="section-kicker">04 / RIWAYAT</div>
             <h2>Riwayat iterasi</h2>
-            <p>Versi tersimpan pada browser ini saja. Riwayat tidak dikirim ke server.</p>
+            <p>Versi tersimpan di browser ini saja. Riwayat tidak dikirim ke server.</p>
           </div>
           <div class="workspace-backup-actions">
             <span id="historyCount" class="count-chip">0 versi</span>
@@ -346,7 +362,7 @@
     <footer class="footer">
       <div class="footer-brand"><span class="brand-mark small-mark">P<span>+</span></span><span>Prompt Improvements</span></div>
       <p>Gratis · Local-first · API key opsional</p>
-      <p class="footer-note">Analisis berbasis aturan. Uji prompt pada tugas nyata sebelum mengandalkannya di produksi.</p>
+      <p class="footer-note">Prompt yang baik membantu memperjelas instruksi, bukan menjamin kebenaran jawaban AI.</p>
     </footer>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
