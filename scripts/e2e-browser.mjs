@@ -42,7 +42,7 @@ try {
   await page.locator("#copyButton").click();
   await page.waitForFunction(() => document.querySelector("#toast").textContent.includes("Prompt disalin"));
   const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(clipboard, output, "copy action must write the current prompt");
+  assert.equal(clipboard, output.trim(), "copy action must write the trimmed prompt text");
   await page.locator("#saveButton").click();
   assert.equal(await page.locator(".history-card").count(), 1);
   await page.reload({ waitUntil: "networkidle" });
