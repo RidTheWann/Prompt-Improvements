@@ -109,7 +109,7 @@ try {
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 1);
   assert.equal(await page.locator("#originalPrompt").inputValue(), "");
   assert.equal(await page.locator("#improvedPrompt").inputValue(), "");
-  assert.equal(await page.locator("#resultStatus").textContent, "Menunggu input");
+  assert.equal(await page.locator("#resultStatus").textContent(), "Menunggu input");
   console.log("[PASS] Starting a new workspace cancels streaming without restoring stale output");
 
   await page.locator("#originalPrompt").fill("Prompt lain yang akan diganti versi tersimpan.");
