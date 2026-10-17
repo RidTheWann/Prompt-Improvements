@@ -25,6 +25,8 @@ let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
 let activeOptimizationController = null;
 let activeAiController = null;
+let activeAiOperationId = 0;
+let activeAiInvalidationNotified = false;
 
 const fields = [
   "originalPrompt",
@@ -214,6 +216,26 @@ async function checkLlmConnection() {
   }
 }
 
+function invalidateActiveAiOperation(reason, notify = false) {
+  if (!activeAiController) return;
+  const controller = activeAiController;
+  activeAiOperationId += 1;
+  if (!controller.signal.aborted) {
+    const abortError = new Error(reason);
+    abortError.name = "AbortError";
+    controller.abort(abortError);
+  }
+  if (notify && !activeAiInvalidationNotified) {
+    activeAiInvalidationNotified = true;
+    const message = "Respons AI dihentikan karena " + reason + ".";
+    $("resultStatus").textContent = "AI dibatalkan · " + reason;
+    setLlmStatus(message, "neutral");
+    showToast(message);
+  } else if (!notify) {
+    activeAiInvalidationNotified = true;
+  }
+}
+
 function cancelAiImprovement() {
   if (activeAiController) {
     const error = new Error("Pembuatan prompt dengan AI dibatalkan.");
@@ -258,6 +280,8 @@ async function runSelectedEngine() {
   const cancelButton = $("cancelImproveButton");
   const previousButtonLabel = $("improveButtonText").textContent;
   let timeoutId;
+  let controller = null;
+  let operationId = null;
   button.disabled = true;
   cancelButton.hidden = false;
   cancelButton.disabled = false;
@@ -274,12 +298,15 @@ async function runSelectedEngine() {
       throw new Error("Cek koneksi dan pilih model yang terpasang sebelum memakai AI.");
     }
     saveLlmConfig();
-    activeAiController = new AbortController();
+    controller = new AbortController();
+    activeAiController = controller;
+    activeAiInvalidationNotified = false;
+    operationId = ++activeAiOperationId;
     timeoutId = window.setTimeout(() => {
-      if (activeAiController) {
+      if (activeAiController === controller && !controller.signal.aborted) {
         const timeoutErr = new Error("Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas.");
         timeoutErr.name = "TimeoutError";
-        activeAiController.abort(timeoutErr);
+        controller.abort(timeoutErr);
       }
     }, 240000);
 
@@ -289,14 +316,16 @@ async function runSelectedEngine() {
       originalPrompt,
       structuredDraft: draftToImprove,
       settings,
-      signal: activeAiController.signal,
+      signal: controller.signal,
       onChunk: (_chunk, accumulated) => {
+        if (operationId !== activeAiOperationId || controller.signal.aborted) return;
         $("improvedPrompt").value = accumulated;
         $("resultStatus").textContent = "Menerima respons AI...";
         updateWordCounts();
         revealOutputPanel();
       }
     });
+    if (operationId !== activeAiOperationId) return;
     $("improvedPrompt").value = refinedPrompt;
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
     const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: refinedPrompt });
@@ -306,7 +335,8 @@ async function runSelectedEngine() {
     showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
     revealOutputPanel();
   } catch (error) {
-    const isTimeout = error?.name === "TimeoutError" || activeAiController?.signal?.reason?.name === "TimeoutError";
+    if (operationId !== null && operationId !== activeAiOperationId) return;
+    const isTimeout = error?.name === "TimeoutError" || controller?.signal?.reason?.name === "TimeoutError";
     const isAbort = (error?.name === "AbortError" || activeAiController?.signal?.aborted) && !isTimeout;
 
     if (isAbort) {
@@ -333,7 +363,7 @@ async function runSelectedEngine() {
     }
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
-    activeAiController = null;
+    if (activeAiController === controller) activeAiController = null;
     button.disabled = false;
     $("improveButtonText").textContent = previousButtonLabel;
     cancelButton.hidden = true;
@@ -1456,6 +1486,7 @@ function renderHistory() {
 function restoreVersion(id) {
   const version = savedVersions.find((item) => item.id === id);
   if (!version) return;
+  invalidateActiveAiOperation("Versi riwayat dipulihkan");
   const settings = version.settings ?? {};
   $("originalPrompt").value = version.originalPrompt;
   $("objective").value = settings.objective ?? "";
@@ -1479,6 +1510,7 @@ function restoreVersion(id) {
 }
 
 function clearWorkspace() {
+  invalidateActiveAiOperation("Workspace baru dibuka");
   for (const id of fields) {
     if (id === "outputFormat") $(id).value = "auto";
     else $(id).value = "";
@@ -1577,6 +1609,12 @@ $("llmEndpoint").addEventListener("change", () => {
   saveLlmConfig();
   setLlmStatus("Alamat berubah. Cek koneksi kembali untuk memuat model.");
 });
+for (const id of [...new Set([...fields, ...ruleIds, "improvedPrompt", "iterationFeedback", "engineMode", "llmProvider", "llmEndpoint", "llmApiKey", "llmModel"])]) {
+  const field = $(id);
+  const invalidateFromEdit = () => invalidateActiveAiOperation("input atau pengaturan berubah saat AI bekerja", true);
+  field.addEventListener("input", invalidateFromEdit);
+  field.addEventListener("change", invalidateFromEdit);
+}
 $("iterateButton").addEventListener("click", () => {
   const feedback = $("iterationFeedback").value.trim();
   if (!currentOriginal()) {
@@ -1640,6 +1678,7 @@ function applyTemplate(id) {
   if (!template) return;
   const hasWork = currentOriginal() || $("improvedPrompt").value.trim();
   if (hasWork && !window.confirm("Ganti isi editor dengan contoh \"" + template.label + "\"? Riwayat tersimpan tidak terhapus.")) return;
+  invalidateActiveAiOperation("Template diganti");
   for (const key of fields) {
     $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
   }
