@@ -314,3 +314,82 @@ test("Streaming catches finish_reason length and raises actionable error", async
     /Output model terpotong karena batas token/
   );
 });
+
+
+test("SSE parser handles irregular byte boundaries, CRLF, and split UTF-8 characters", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const received = [];
+  const payload = new TextEncoder().encode([
+    'data: {"choices":[{"delta":{"content":"Halo 🌏"}}]}\r\n\r\n',
+    'data: {"choices":[{"delta":{"content":" dunia"}}]}\r\n\r\n',
+    "data: [DONE]\r\n\r\n"
+  ].join(""));
+  const chunks = [];
+  for (let offset = 0; offset < payload.length;) {
+    const size = (offset % 7) + 1;
+    chunks.push(payload.slice(offset, offset + size));
+    offset += size;
+  }
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    }
+  });
+  mockFetch(() => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: stream
+  }));
+
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "byte-chunks",
+    originalPrompt: "test",
+    structuredDraft: "draft",
+    onChunk: (chunk, accumulated) => received.push({ chunk, accumulated })
+  });
+  assert.equal(result, "Halo 🌏 dunia");
+  assert.equal(received.at(-1).accumulated, "Halo 🌏 dunia");
+});
+
+test("SSE [DONE] sentinel stops reading even if the provider leaves the stream open", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const encoder = new TextEncoder();
+  let cancelled = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Complete"}}]}\n\ndata: [DONE]\n\n'));
+    },
+    cancel() {
+      cancelled = true;
+    }
+  });
+  mockFetch(() => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: stream
+  }));
+
+  let timeout;
+  try {
+    const result = await Promise.race([
+      improvePromptWithAI({
+        baseUrl: "",
+        model: "sentinel",
+        originalPrompt: "test",
+        structuredDraft: "draft",
+        onChunk: () => {}
+      }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Stream did not finish after [DONE]")), 150);
+      })
+    ]);
+    assert.equal(result, "Complete");
+    assert.equal(cancelled, true);
+  } finally {
+    clearTimeout(timeout);
+  }
+});

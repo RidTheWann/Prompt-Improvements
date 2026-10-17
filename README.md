@@ -66,7 +66,9 @@ Mode **AI via API key** meminta model menulis ulang prompt-mu dengan meta-prompt
 2. Tempel API key lalu klik **Cek koneksi & model**; daftar model diambil langsung dari penyedia sehingga tidak ada nama model usang.
 3. Klik **Sempurnakan dengan AI**.
 
-Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). API key hanya ada di memori halaman yang aktif; key tidak disimpan ke localStorage/sessionStorage dan tidak masuk ke backup atau ekspor. Setelah halaman dimuat ulang, masukkan key kembali. Skrip atau ekstensi yang berjalan di halaman tetap berpotensi mengakses key selama digunakan, jadi pakai key dengan batas pengeluaran dan hindari perangkat bersama. OpenAI langsung dari browser dapat diblokir CORS; gunakan penyedia yang mendukung akses browser atau endpoint kustom yang tepercaya. Jika koneksi gagal, mode struktur tetap bisa dipakai.
+Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). API key hanya ada di memori halaman yang aktif; key tidak disimpan ke localStorage/sessionStorage dan tidak masuk ke backup atau ekspor. Setelah halaman dimuat ulang, masukkan key kembali. Skrip atau ekstensi yang berjalan di halaman tetap berpotensi mengakses key selama digunakan, jadi pakai key dengan batas pengeluaran dan hindari perangkat bersama.
+
+Saat AI sedang streaming, mengedit prompt/pengaturan, memilih template, memulai workspace baru, atau memulihkan versi tersimpan membatalkan operasi aktif agar respons lama tidak menimpa input yang lebih baru. Tombol batal biasa tetap mempertahankan teks parsial yang sudah diterima untuk ditinjau. OpenAI langsung dari browser dapat diblokir CORS; gunakan penyedia yang mendukung akses browser atau endpoint kustom yang tepercaya. Jika koneksi gagal, mode struktur tetap bisa dipakai.
 
 ## Deploy to GitHub Pages
 

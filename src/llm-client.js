@@ -190,7 +190,7 @@ function extractTextParts(parts) {
 async function readStreamResponse(response, kind, signal, onChunk) {
   const reader = response.body.getReader();
   const onAbort = () => {
-    try { reader.cancel(); } catch { /* ignore */ }
+    try { void reader.cancel().catch(() => {}); } catch { /* ignore */ }
   };
   if (signal?.aborted) {
     onAbort();
@@ -202,62 +202,79 @@ async function readStreamResponse(response, kind, signal, onChunk) {
   let buffer = "";
   let accumulated = "";
   let finishReason = "";
+  let receivedDoneMarker = false;
+
+  function processLine(rawLine) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(":") || !line.startsWith("data:")) return;
+    const dataStr = line.slice(5).trim();
+    if (dataStr === "[DONE]") {
+      receivedDoneMarker = true;
+      return;
+    }
+
+    let data;
+    try {
+      data = JSON.parse(dataStr);
+    } catch {
+      // Ignore non-JSON SSE lines and incomplete provider events.
+      return;
+    }
+
+    let chunkText = "";
+    if (kind === "anthropic") {
+      if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+        chunkText = data.delta.text ?? "";
+      } else if (data.type === "message_delta" && data.delta?.stop_reason) {
+        finishReason = String(data.delta.stop_reason).toLowerCase();
+      }
+    } else if (kind === "gemini") {
+      const part = data.candidates?.[0]?.content?.parts?.[0];
+      if (typeof part?.text === "string") chunkText = part.text;
+      if (data.candidates?.[0]?.finishReason) {
+        finishReason = String(data.candidates[0].finishReason).toLowerCase();
+      }
+    } else {
+      const choice = data.choices?.[0];
+      if (typeof choice?.delta?.content === "string") {
+        chunkText = choice.delta.content;
+      } else if (Array.isArray(choice?.delta?.content)) {
+        chunkText = extractTextParts(choice.delta.content);
+      }
+      if (choice?.finish_reason) {
+        finishReason = String(choice.finish_reason).toLowerCase();
+      }
+    }
+
+    if (chunkText) {
+      accumulated += chunkText;
+      onChunk(chunkText, accumulated);
+    }
+  }
 
   try {
     while (true) {
       if (signal?.aborted) throw createAbortError(signal);
       const { done, value } = await reader.read();
       if (signal?.aborted) throw createAbortError(signal);
-      if (done) break;
+      if (done) {
+        buffer += decoder.decode();
+        if (buffer) processLine(buffer);
+        break;
+      }
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith(":")) continue;
-        if (line.startsWith("data:")) {
-          const dataStr = line.slice(5).trim();
-          if (dataStr === "[DONE]") break;
-          try {
-            const data = JSON.parse(dataStr);
-            let chunkText = "";
-            if (kind === "anthropic") {
-              if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
-                chunkText = data.delta.text ?? "";
-              } else if (data.type === "message_delta" && data.delta?.stop_reason) {
-                finishReason = String(data.delta.stop_reason).toLowerCase();
-              }
-            } else if (kind === "gemini") {
-              const part = data.candidates?.[0]?.content?.parts?.[0];
-              if (typeof part?.text === "string") chunkText = part.text;
-              if (data.candidates?.[0]?.finishReason) {
-                finishReason = String(data.candidates[0].finishReason).toLowerCase();
-              }
-            } else {
-              const choice = data.choices?.[0];
-              if (typeof choice?.delta?.content === "string") {
-                chunkText = choice.delta.content;
-              } else if (Array.isArray(choice?.delta?.content)) {
-                chunkText = extractTextParts(choice.delta.content);
-              }
-              if (choice?.finish_reason) {
-                finishReason = String(choice.finish_reason).toLowerCase();
-              }
-            }
-
-            if (chunkText) {
-              accumulated += chunkText;
-              onChunk(chunkText, accumulated);
-            }
-          } catch {
-            // Incomplete or non-JSON chunk
-          }
-        }
+      for (const line of lines) {
+        processLine(line);
+        if (receivedDoneMarker) break;
       }
+      if (receivedDoneMarker) break;
     }
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    if (receivedDoneMarker) onAbort();
     try {
       reader.releaseLock();
     } catch { /* ignore */ }
@@ -270,7 +287,6 @@ async function readStreamResponse(response, kind, signal, onChunk) {
   if (!clean) throw new Error("Model tidak mengembalikan teks yang dapat digunakan. Periksa model atau coba lagi.");
   return clean;
 }
-
 async function executeCompletion(url, options, { kind, shouldStream, onChunk, signal }, attempt = 0) {
   const label = PROVIDERS[connection.provider].label;
   let response;
