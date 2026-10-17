@@ -54,3 +54,10 @@ test("API keys are memory-only and never persisted in browser storage", async ()
   assert.match(app, /clearLegacyApiKeys\(\)/);
   assert.doesNotMatch(app, /(?:localStorage|sessionStorage)\.setItem\((?:KEY_SESSION|KEY_PERSIST)/);
 });
+
+
+test("legacy key storage constants initialize before AI config bootstrap", () => {
+  const keysAt = app.indexOf('const KEY_SESSION = "prompt-improvements.api-key.session";');
+  const configAt = app.indexOf("let llmConfig = loadLlmConfig();");
+  assert.ok(keysAt >= 0 && keysAt < configAt, "legacy credential cleanup constants must be initialized before loading AI settings");
+});

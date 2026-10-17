@@ -7,6 +7,8 @@ import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS }
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const LLM_CONFIG_KEY = "prompt-improvements.llm.v1";
+const KEY_SESSION = "prompt-improvements.api-key.session";
+const KEY_PERSIST = "prompt-improvements.api-key.persist";
 const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
 const MAX_EVAL_CASES = 20;
 const MAX_HISTORY = 50;
@@ -66,8 +68,6 @@ function loadHistory() {
 }
 
 
-const KEY_SESSION = "prompt-improvements.api-key.session";
-const KEY_PERSIST = "prompt-improvements.api-key.persist";
 
 function clearLegacyApiKeys() {
   try { sessionStorage.removeItem(KEY_SESSION); } catch { /* Storage may be disabled. */ }
