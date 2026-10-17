@@ -1140,7 +1140,16 @@ function showToast(message) {
 function revealOutputPanel() {
   const panel = $("outputPanel");
   panel.classList.add("has-result");
-  if (window.matchMedia("(max-width: 900px)").matches) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  const welcome = $("chatWelcome");
+  if (welcome) welcome.classList.add("has-conversation");
+  const bubble = $("chatUserBubble");
+  const bubbleText = $("chatUserPromptText");
+  const promptVal = currentOriginal();
+  if (bubble && bubbleText && promptVal) {
+    bubbleText.textContent = promptVal;
+    bubble.hidden = false;
+  }
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function currentOriginal() {
@@ -1497,6 +1506,16 @@ function clearWorkspace() {
   description.textContent = "Enam aspek akan muncul di sini setelah prompt dianalisis.";
   empty.append(icon, title, description);
   $("dimensionList").append(empty);
+
+  const bubble = $("chatUserBubble");
+  if (bubble) bubble.hidden = true;
+  const bubbleText = $("chatUserPromptText");
+  if (bubbleText) bubbleText.textContent = "";
+  const welcome = $("chatWelcome");
+  if (welcome) welcome.classList.remove("has-conversation");
+  const panel = $("outputPanel");
+  if (panel) panel.classList.remove("has-result");
+
   updateWordCounts();
   showToast("Workspace baru siap. Riwayat tersimpan tetap aman.");
   $("originalPrompt").focus();
@@ -1605,6 +1624,17 @@ function renderTemplates() {
   }
 }
 
+function toggleSidebar(force) {
+  const sidebar = $("chatSidebar");
+  const backdrop = $("sidebarBackdrop");
+  const toggleBtn = $("sidebarToggle");
+  if (!sidebar || !backdrop || !toggleBtn) return;
+  const open = typeof force === "boolean" ? force : !sidebar.classList.contains("open");
+  sidebar.classList.toggle("open", open);
+  backdrop.classList.toggle("open", open);
+  toggleBtn.setAttribute("aria-expanded", String(open));
+}
+
 function applyTemplate(id) {
   const template = getTemplate(id);
   if (!template) return;
@@ -1616,6 +1646,7 @@ function applyTemplate(id) {
   $("improvedPrompt").value = "";
   iterationNotes = [];
   updateWordCounts();
+  toggleSidebar(false);
   $("originalPrompt").focus();
   showToast("Contoh dimuat. Ganti bagian [dalam kurung] dengan kebutuhanmu.");
 }
@@ -1630,6 +1661,8 @@ function setAdvancedMode(enabled, persist = true) {
   try { localStorage.setItem(ADVANCED_KEY, enabled ? "1" : "0"); } catch { /* preferensi tidak wajib tersimpan */ }
 }
 
+$("sidebarToggle").addEventListener("click", () => toggleSidebar());
+$("sidebarBackdrop").addEventListener("click", () => toggleSidebar(false));
 $("templateList").addEventListener("click", (event) => {
   const chip = event.target.closest("button[data-template]");
   if (chip) applyTemplate(chip.dataset.template);
