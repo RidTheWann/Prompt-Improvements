@@ -70,12 +70,8 @@ const KEY_SESSION = "prompt-improvements.api-key.session";
 const KEY_PERSIST = "prompt-improvements.api-key.persist";
 
 function clearLegacyApiKeys() {
-  try {
-    sessionStorage.removeItem(KEY_SESSION);
-    localStorage.removeItem(KEY_PERSIST);
-  } catch {
-    // Storage may be disabled; the API key remains memory-only regardless.
-  }
+  try { sessionStorage.removeItem(KEY_SESSION); } catch { /* Storage may be disabled. */ }
+  try { localStorage.removeItem(KEY_PERSIST); } catch { /* Storage may be disabled. */ }
 }
 
 function loadLlmConfig() {

@@ -1,0 +1,47 @@
+name: Browser smoke tests
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    name: Chromium beginner and privacy flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42b5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Run deterministic and contract tests
+        run: npm test
+      - name: Install temporary Playwright browser tooling
+        run: |
+          npm install --no-save --no-package-lock playwright
+          npx playwright install --with-deps chromium
+      - name: Start static app server
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 > "$RUNNER_TEMP/app-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/app-server.pid"
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
+          echo "E2E_APP_URL=http://127.0.0.1:4173/" >> "$GITHUB_ENV"
+      - name: Syntax-check application modules
+        run: |
+          node --check src/app.js
+          node --check src/prompt-engine.js
+          node --check src/llm-client.js
+          node --check service-worker.js
+      - name: Run browser smoke tests
+        run: node scripts/e2e-browser.mjs
