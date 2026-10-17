@@ -40,6 +40,19 @@ function countWords(value) {
   const trimmed = String(value ?? "").trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
+const MAKE_PATTERN = /\b(write|create|build|implement|make|generate|code|tulis|buat|buatkan|bikin|rancang|implementasikan)\b/i;
+const STRONG_CODE_PATTERN = /\b(function|fungsi|class|method|endpoint|query|regex|algorithm|algoritma|unit test|module|modul)\b/i;
+const WEAK_CODE_PATTERN = /\b(script|skrip|program|aplikasi|app|api)\b/i;
+const CODE_LANGUAGE_PATTERN = /\b(python|javascript|typescript|java|rust|golang|php|ruby|kotlin|swift|sql|bash|shell|html|css|react|flask|django|node\.?js)\b/i;
+const ROLE_CUE = /\b(kamu adalah|anda adalah|bertindaklah|act as|you are)\b/i;
+const LIMIT_CUE = /\b(maksimal|minimal|maksimum|maximum|max|tepat)\b|\b\d+\s*(kata|karakter|poin|paragraf|baris|kalimat|words?|characters?|bullets?|sentences?)\b|\b(format|daftar|tabel|json)\b/i;
+const TONE_CUE = /\b(target|audiens|audience|pembaca|nada|gaya|tone|style|untuk (?:pemula|anak|mahasiswa|pelajar|manajer|pelanggan))\b/i;
+
+function isWellSpecified(text) {
+  const source = String(text ?? "");
+  return ROLE_CUE.test(source) && LIMIT_CUE.test(source) && TONE_CUE.test(source);
+}
+
 export function inferTaskType(text) {
   const source = String(text ?? "");
   const explicitIntents = [
@@ -161,7 +174,7 @@ function isComplexTask(original, type, settings) {
   const multipleActions = (String(original).match(/\b(?:dan|serta|kemudian|lalu|beserta|sekaligus|while|and then)\b/gi) ?? []).length >= 2;
   const complexityTerms = /\b(lengkap|mendalam|detail|terperinci|step[- ]by[- ]step|langkah demi langkah|produksi|production|arsitektur|audit|komprehensif|comprehensive|multi[- ]step|end[- ]to[- ]end|ujung ke ujung)\b/i.test(original);
   const processTask = ["coding", "research", "analysis", "planning", "extraction"].includes(type?.id);
-  return processTask || words >= 24 || multipleActions || complexityTerms || hasValue(settings.context) || hasValue(settings.constraints) || hasValue(settings.successCriteria);
+  return processTask || (words >= 24 && !isWellSpecified(original)) || multipleActions || complexityTerms || hasValue(settings.context) || hasValue(settings.constraints) || hasValue(settings.successCriteria);
 }
 const FORMAT_GUIDANCE = {
   auto: "",

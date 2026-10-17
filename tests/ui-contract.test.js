@@ -35,7 +35,7 @@ test("initial copy and download actions are disabled until a prompt is generated
 });
 
 test("service worker cache includes the engine and adapter modules", () => {
-  assert.match(serviceWorker, /prompt-improvements-v6/);
+  assert.match(serviceWorker, /prompt-improvements-__BUILD_ID__/);
   for (const path of ["./src/app.js", "./src/prompt-engine.js", "./src/llm-client.js", "./src/templates.js"]) {
     assert.ok(serviceWorker.includes('"' + path + '"'), "missing app-shell entry " + path);
   }
