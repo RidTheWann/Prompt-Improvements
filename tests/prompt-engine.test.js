@@ -88,7 +88,8 @@ test("clarification asks only when missing information is blocking", () => {
   assert.match(result, /benar-benar mengubah hasil/i);
   assert.ok(findMissingInfo("Tulis email ke [nama]", {}).length >= 2);
   const simple = buildImprovedPrompt({ originalPrompt: "Jelaskan fotosintesis dengan sederhana." });
-  assert.match(simple, /jangan menahan jawaban hanya karena detail opsional/i);
+  assert.doesNotMatch(simple, /pertanyaan klarifikasi/i, "a simple task should not receive needless clarification boilerplate");
+  assert.ok(simple.length < 800, "simple task guidance should remain concise");
 });
 
 test("source material is separated from task instructions", () => {
