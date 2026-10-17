@@ -1,6 +1,6 @@
 # Prompt Improvements
 
-A local-first, zero-API-cost workbench for turning rough prompts into clearer, testable instructions through iterative refinement.
+A guided prompt builder with an adaptive deterministic engine and optional AI refinement. The default path works in the browser without an API key; advanced evaluation remains available when repeatable testing is needed.
 
 ## Why this project exists
 
@@ -35,13 +35,26 @@ The project uses Node.js built-in test runner and has no runtime dependencies:
 npm test
 ```
 
+## Prompt engine behavior
+
+The deterministic engine classifies common task intents and adapts the structure instead of forcing one template onto every request. Simple tasks stay concise; complex tasks can receive tailored steps, success criteria, source-data boundaries, and conflict warnings. Scores are heuristic indicators only, not measures of factual accuracy or model quality. The engine treats missing optional details as optional and reserves clarification questions for information that would materially change the result.
+
+The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, and response-truncation detection. Browser-to-provider requests depend on each provider's key, quota, and CORS behavior. Avoid storing API keys on shared devices and do not submit sensitive data to external providers unless authorized.
+
+## Rujukan desain dan keamanan
+
+- [OpenAI — Prompt engineering](https://developers.openai.com/api/docs/guides/prompt-engineering): instruksi eksplisit, format keluaran, delimiter, serta evaluasi iteratif.
+- [Anthropic — Prompt templates and variables](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-templates-and-variables): batas konteks dan instruksi yang konsisten melalui tag yang jelas.
+- [Google Gemini — Prompt design strategies](https://ai.google.dev/gemini-api/docs/prompting-strategies): instruksi langsung, delimiter konsisten, dan parameter keluaran yang eksplisit.
+- [OWASP — HTML5 Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html): jangan menganggap browser storage sebagai tempat aman untuk kredensial.
+
 ## What "continuous improvement" means here
 
-1. Start with a rough prompt.
-2. Inspect the structural analysis and identify weak dimensions.
-3. Add only the context and constraints that genuinely apply.
-4. Generate a structured version and compare it with the original.
-5. Save an iteration, test it against real tasks, and refine it again.
+1. Start with one sentence or choose a starter example.
+2. Generate a prompt; adding extra details is optional.
+3. Review the result and copy it into your preferred AI assistant.
+4. Add context or feedback only when the first result needs refinement.
+5. Use advanced evaluation and saved versions when repeatable comparison matters.
 
 The deterministic engine does not infer missing domain knowledge or guarantee better answers. AI mode adds semantic rewriting with a model you connect via API key, but its output still needs review and evaluation against representative test cases.
 
@@ -53,7 +66,7 @@ Mode **AI via API key** meminta model menulis ulang prompt-mu dengan meta-prompt
 2. Tempel API key lalu klik **Cek koneksi & model**; daftar model diambil langsung dari penyedia sehingga tidak ada nama model usang.
 3. Klik **Sempurnakan dengan AI**.
 
-Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). Key hanya disimpan di sessionStorage, atau di localStorage bila kamu mengaktifkan **Ingat key**, dan tidak pernah masuk ke backup/ekspor. Siapa pun yang punya akses ke browser ini dapat membacanya, jadi gunakan key dengan batas pengeluaran. OpenAI langsung dari browser dapat diblokir CORS; gunakan OpenRouter atau proxy sendiri via endpoint kustom. Jika koneksi gagal, mode struktur tetap bisa dipakai.
+Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). API key hanya ada di memori halaman yang aktif; key tidak disimpan ke localStorage/sessionStorage dan tidak masuk ke backup atau ekspor. Setelah halaman dimuat ulang, masukkan key kembali. Skrip atau ekstensi yang berjalan di halaman tetap berpotensi mengakses key selama digunakan, jadi pakai key dengan batas pengeluaran dan hindari perangkat bersama. OpenAI langsung dari browser dapat diblokir CORS; gunakan penyedia yang mendukung akses browser atau endpoint kustom yang tepercaya. Jika koneksi gagal, mode struktur tetap bisa dipakai.
 
 ## Deploy to GitHub Pages
 

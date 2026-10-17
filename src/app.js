@@ -7,6 +7,8 @@ import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS }
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const LLM_CONFIG_KEY = "prompt-improvements.llm.v1";
+const KEY_SESSION = "prompt-improvements.api-key.session";
+const KEY_PERSIST = "prompt-improvements.api-key.persist";
 const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
 const MAX_EVAL_CASES = 20;
 const MAX_HISTORY = 50;
@@ -66,20 +68,35 @@ function loadHistory() {
 }
 
 
-const KEY_SESSION = "prompt-improvements.api-key.session";
-const KEY_PERSIST = "prompt-improvements.api-key.persist";
+
+function clearLegacyApiKeys() {
+  try { sessionStorage.removeItem(KEY_SESSION); } catch { /* Storage may be disabled. */ }
+  try { localStorage.removeItem(KEY_PERSIST); } catch { /* Storage may be disabled. */ }
+}
 
 function loadLlmConfig() {
-  const fallback = { provider: "openrouter", baseUrl: "", model: "", remember: false };
+  const fallback = { provider: "openrouter", baseUrl: "", model: "" };
+  clearLegacyApiKeys();
   try {
     const stored = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || "{}");
-    return { provider: PROVIDERS[stored.provider] ? stored.provider : fallback.provider, baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "", model: typeof stored.model === "string" ? stored.model : "", remember: stored.remember === true };
-  } catch { return fallback; }
+    const clean = {
+      provider: PROVIDERS[stored.provider] ? stored.provider : fallback.provider,
+      baseUrl: typeof stored.baseUrl === "string" ? stored.baseUrl : "",
+      model: typeof stored.model === "string" ? stored.model : ""
+    };
+    // Migrate old settings and make sure no legacy "remember key" flag remains.
+    try { localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(clean)); } catch { /* Optional setting only. */ }
+    return clean;
+  } catch {
+    return fallback;
+  }
 }
 
 function readStoredKey() {
-  try { return sessionStorage.getItem(KEY_SESSION) || localStorage.getItem(KEY_PERSIST) || ""; } catch { return ""; }
+  clearLegacyApiKeys();
+  return "";
 }
+
 
 function endpointValue() {
   configureConnection({ provider: $("llmProvider").value, apiKey: $("llmApiKey").value });
@@ -87,15 +104,23 @@ function endpointValue() {
 }
 
 function saveLlmConfig() {
-  llmConfig = { provider: $("llmProvider").value, baseUrl: $("llmEndpoint").value.trim(), model: $("llmModel").value.trim(), remember: $("llmRemember").checked };
+  llmConfig = {
+    provider: $("llmProvider").value,
+    baseUrl: $("llmEndpoint").value.trim(),
+    model: $("llmModel").value.trim()
+  };
   const key = $("llmApiKey").value.trim();
+  // The provider key remains in the active page/module memory only. Remove
+  // credentials saved by older versions and never write a key to web storage.
+  clearLegacyApiKeys();
+  configureConnection({ provider: llmConfig.provider, apiKey: key });
   try {
     localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(llmConfig));
-    sessionStorage.removeItem(KEY_SESSION);
-    localStorage.removeItem(KEY_PERSIST);
-    if (key) (llmConfig.remember ? localStorage : sessionStorage).setItem(llmConfig.remember ? KEY_PERSIST : KEY_SESSION, key);
-  } catch { showToast("Pengaturan tidak bisa disimpan oleh browser. Kamu tetap bisa melanjutkan sesi ini."); }
+  } catch {
+    showToast("Preferensi tidak dapat disimpan oleh browser. Kamu tetap bisa memakai sesi ini.");
+  }
 }
+
 
 function setLlmStatus(message, tone = "neutral") {
   const status = $("llmStatus");
@@ -134,7 +159,6 @@ function initializeLlmSettings() {
   }
   $("llmProvider").value = llmConfig.provider;
   $("llmEndpoint").value = llmConfig.baseUrl;
-  $("llmRemember").checked = llmConfig.remember;
   $("llmApiKey").value = readStoredKey();
   if (llmConfig.model) {
     const option = document.createElement("option");
@@ -153,10 +177,13 @@ function updateProviderFields() {
 
 function updateEngineLabel() {
   const useAi = $("engineMode").value === "ai";
-  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Perbaiki prompt";
-  if (!useAi) setLlmStatus("Mode struktur bekerja tanpa API key.");
+  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
+  $("privacyModeNote").textContent = useAi
+    ? "Mode AI mengirim isi prompt dan konteks ke penyedia yang kamu pilih. API key digunakan langsung dari browser; key tidak masuk ke backup. Gunakan key dengan batas pengeluaran dan hindari data sensitif."
+    : "Mode gratis menyusun prompt langsung di browser tanpa API key atau biaya token. Tidak ada permintaan AI yang dikirim sampai kamu memilih Mode AI.";
+  if (!useAi) setLlmStatus("Mode gratis aktif · tidak membutuhkan API key.");
   else if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
-  else setLlmStatus("Masukkan API key, lalu klik Cek koneksi & model.");
+  else setLlmStatus("Untuk memakai AI, masukkan API key lalu cek koneksi.");
 }
 
 async function checkLlmConnection() {
@@ -209,7 +236,8 @@ async function runSelectedEngine() {
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
     showToast(iterationNotes.length
       ? "Iterasi struktur diperbarui. Prompt awal dan seluruh catatan tetap dipertahankan."
-      : "Prompt terstruktur berhasil dibuat. Tinjau dan sesuaikan sebelum digunakan.");
+      : "Prompt berhasil dibuat. Tinjau sebentar, lalu salin ke AI pilihanmu.");
+    revealOutputPanel();
     return;
   }
 
@@ -222,7 +250,7 @@ async function runSelectedEngine() {
   button.disabled = true;
   $("improveButtonText").textContent = "AI sedang bekerja...";
   $("resultStatus").textContent = "Mengirim prompt ke model...";
-  setLlmStatus("Model sedang memproses di komputer ini. Waktu respons bergantung pada model dan perangkat.");
+  setLlmStatus("Mengirim prompt ke penyedia AI yang dipilih. Waktu respons bergantung pada model dan koneksi.");
   try {
     const baseUrl = endpointValue();
     const model = $("llmModel").value.trim();
@@ -238,8 +266,9 @@ async function runSelectedEngine() {
     $("improvedPrompt").value = refinedPrompt;
     $("resultStatus").textContent = iterationNotes.length ? "Iterasi AI " + iterationNotes.length : "AI selesai";
     updateWordCounts();
-    setLlmStatus("Selesai · prompt diproses oleh model.", "success");
-    showToast("Prompt disempurnakan oleh AI. Periksa hasil sebelum digunakan.");
+    setLlmStatus("Selesai · prompt diproses oleh penyedia AI yang dipilih.", "success");
+    showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
+    revealOutputPanel();
   } catch (error) {
     $("resultStatus").textContent = "AI gagal";
     const message = error?.name === "AbortError"
@@ -939,7 +968,7 @@ function applyWorkspaceBackup(backup) {
   const next = new Map([
     [STORAGE_KEY, JSON.stringify(backup.history)],
     [EVAL_CASES_KEY, JSON.stringify(backup.evaluationCases)],
-    [LLM_CONFIG_KEY, JSON.stringify({ provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember })]
+    [LLM_CONFIG_KEY, JSON.stringify({ provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model })]
   ]);
   try {
     for (const [key, value] of next) localStorage.setItem(key, value);
@@ -958,7 +987,7 @@ function applyWorkspaceBackup(backup) {
   savedVersions = backup.history;
   evaluationCases = backup.evaluationCases;
   iterationNotes = [...backup.workspace.iterationNotes];
-  llmConfig = { provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model, remember: llmConfig.remember };
+  llmConfig = { provider: backup.workspace.engine.provider, baseUrl: backup.workspace.engine.endpoint, model: backup.workspace.engine.model };
   llmModels = [];
   for (const id of fields) $(id).value = backup.workspace.fields[id] ?? "";
   $("improvedPrompt").value = backup.workspace.fields.improvedPrompt ?? "";
@@ -1053,19 +1082,31 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3100);
 }
 
+function revealOutputPanel() {
+  const panel = $("outputPanel");
+  panel.classList.add("has-result");
+  if (window.matchMedia("(max-width: 900px)").matches) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function currentOriginal() {
   return $("originalPrompt").value.trim();
 }
 
 function updateWordCounts() {
   const originalWords = wordCount(currentOriginal());
+  const output = $("improvedPrompt").value;
   $("wordCount").textContent = originalWords + " kata";
   $("inputHint").textContent = originalWords === 0
-    ? "Mulai dari instruksi yang sudah kamu punya."
+    ? "Satu kalimat sudah cukup. Detail tambahan bersifat opsional."
     : originalWords < 8
-      ? "Prompt singkat bisa bekerja, tetapi mungkin perlu konteks."
-      : "Konteks hanya perlu ditambah jika memang relevan.";
-  $("resultWordCount").textContent = wordCount($("improvedPrompt").value) + " kata";
+      ? "Tidak perlu membuat prompt panjang jika tugasnya sederhana."
+      : "Tambahkan detail hanya jika benar-benar berpengaruh pada hasil.";
+  $("resultWordCount").textContent = wordCount(output) + " kata";
+  $("copyButton").disabled = !output.trim();
+  $("downloadButton").disabled = !output.trim();
+  $("saveButton").disabled = !output.trim() || !currentOriginal();
+  $("exportJsonButton").disabled = !output.trim() || !currentOriginal();
+  $("outputPanel").classList.toggle("has-result", Boolean(output.trim()));
 }
 
 function wordCount(value) {
@@ -1077,12 +1118,34 @@ function renderAnalysis(analysis) {
   lastAnalysis = analysis;
   $("scoreValue").textContent = analysis.score;
   $("scoreBar").style.width = analysis.score + "%";
-  $("scoreSummary").textContent = analysis.score >= 80
-    ? "Struktur tampak lengkap menurut sinyal yang diperiksa. Tetap uji hasilnya pada kasus nyata."
-    : analysis.score >= 55
-      ? "Struktur sudah memiliki beberapa unsur penting. Periksa aspek dengan nilai rendah sebelum memakai prompt."
-      : "Masih ada beberapa unsur struktur yang bisa diperjelas. Lengkapi hanya informasi yang benar-benar diketahui.";
+  $("scoreSummary").textContent = analysis.summary || "Saran ini menilai kelengkapan struktur, bukan kebenaran jawaban AI.";
   $("resultStatus").textContent = analysis.wordCount ? "Analisis selesai" : "Menunggu input";
+  const highlights = $("analysisHighlights");
+  if (highlights) {
+    highlights.replaceChildren();
+    const task = document.createElement("p");
+    task.className = "analysis-task-chip";
+    task.textContent = "Jenis tugas terdeteksi: " + (analysis.taskLabel || "Umum");
+    highlights.append(task);
+    for (const warningText of (analysis.warnings || [])) {
+      const warning = document.createElement("p");
+      warning.className = "analysis-warning";
+      warning.textContent = warningText;
+      highlights.append(warning);
+    }
+    if ((analysis.recommendations || []).length) {
+      const heading = document.createElement("strong");
+      heading.className = "analysis-recommendation-heading";
+      heading.textContent = "Yang bisa diperjelas (pilih yang relevan)";
+      const list = document.createElement("ul");
+      for (const item of analysis.recommendations) {
+        const row = document.createElement("li");
+        row.textContent = item.label + ": " + item.detail;
+        list.append(row);
+      }
+      highlights.append(heading, list);
+    }
+  }
 
   const list = $("dimensionList");
   list.replaceChildren();
@@ -1421,7 +1484,6 @@ $("llmProvider").addEventListener("change", () => {
   setLlmStatus("Penyedia diganti. Masukkan API key lalu cek koneksi.");
 });
 $("llmApiKey").addEventListener("change", saveLlmConfig);
-$("llmRemember").addEventListener("change", saveLlmConfig);
 $("llmModel").addEventListener("change", saveLlmConfig);
 $("llmEndpoint").addEventListener("change", () => {
   llmModels = [];
@@ -1492,6 +1554,8 @@ function applyTemplate(id) {
 
 function setAdvancedMode(enabled, persist = true) {
   $("evaluationSection").hidden = !enabled;
+  document.body.classList.toggle("advanced-mode", enabled);
+  if (enabled) $("engineSettings").open = true;
   $("advancedToggle").setAttribute("aria-pressed", String(enabled));
   $("advancedToggle").textContent = enabled ? "Mode lanjutan: aktif" : "Mode lanjutan";
   if (!persist) return;
