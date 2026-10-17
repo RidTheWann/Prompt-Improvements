@@ -68,3 +68,10 @@ test("legacy key storage constants initialize before AI config bootstrap", () =>
   const configAt = app.indexOf("let llmConfig = loadLlmConfig();");
   assert.ok(keysAt >= 0 && keysAt < configAt, "legacy credential cleanup constants must be initialized before loading AI settings");
 });
+
+test("streaming AI response provides a cancel button in the primary actions", () => {
+  assert.match(html, /id="cancelImproveButton"[^>]*hidden[^>]*disabled/);
+  assert.match(html, /id="cancelImproveButton"[^>]*button-danger-subtle/);
+  assert.match(app, /\$\("cancelImproveButton"\)/);
+  assert.match(app, /function cancelAiImprovement\(\)/);
+});

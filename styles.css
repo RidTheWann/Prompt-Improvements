@@ -341,12 +341,15 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .engine-settings > .ai-local-panel { margin-bottom: 15px; }
 .engine-settings > .ai-local-panel .ai-panel-heading p { max-width: 62ch; }
 .engine-settings .ai-local-note { line-height: 1.7; }
-.primary-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: stretch; }
-.primary-actions #improveButton { min-height: 50px; width: 100%; font-size: 13px; padding: 12px 16px; }
-.primary-actions #analyzeButton { min-height: 50px; }
+.primary-actions { display: flex; gap: 10px; align-items: stretch; }
+.primary-actions #improveButton { min-height: 50px; flex: 1 1 auto; width: 100%; font-size: 13px; padding: 12px 16px; }
+.primary-actions #analyzeButton { min-height: 50px; flex: 0 0 auto; }
+.primary-actions #cancelImproveButton { min-height: 50px; flex: 0 0 auto; }
 .advanced-only { display: none !important; }
 .advanced-mode .advanced-only { display: inline-flex !important; }
 .advanced-mode .primary-actions #improveButton { min-width: 0; }
+.button-danger-subtle { color: #f2a4a4; border-color: #633939; background: #2a1c20; }
+.button-danger-subtle:hover:not(:disabled) { border-color: #8a4848; background: #3b242b; color: #ffbebe; }
 .result-textarea { min-height: 260px; line-height: 1.7; font-size: 13px; }
 .output-panel .result-heading h3 { font-size: 16px; }
 .output-panel .result-heading p { max-width: 46ch; line-height: 1.65; }
@@ -385,9 +388,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 600px) {
   .template-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .template-chip { padding: 9px; font-size: 10px; }
-  .primary-actions { grid-template-columns: minmax(0, 1fr); }
-  .primary-actions #analyzeButton { order: 2; }
+  .primary-actions { flex-direction: column; }
   .primary-actions #improveButton { order: 1; }
+  .primary-actions #cancelImproveButton { order: 2; }
+  .primary-actions #analyzeButton { order: 3; }
   #inputHint { max-width: 60%; }
   .guided-summary { padding: 13px; }
   .engine-settings > .section-subhead, .engine-settings > .toggle-list, .engine-settings > .ai-local-panel { margin-left: 12px; margin-right: 12px; }
