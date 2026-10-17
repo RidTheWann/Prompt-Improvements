@@ -40,7 +40,10 @@ test("simple prompts stay concise and preserve the original request", () => {
   assert.ok(result.includes("## Permintaan asli\n" + originalPrompt));
   assert.ok(result.endsWith("\n"));
   assert.ok(!result.includes("## Langkah kerja\n"));
-  assert.ok(result.length < 1700);
+  assert.ok(!result.includes("## Peran\n"));
+  assert.ok(!result.includes("## Kriteria keberhasilan\n"));
+  assert.ok(result.includes("## Pedoman\n"));
+  assert.ok(result.length < 800);
 });
 
 test("complex coding task adds relevant steps and preserves constraints", () => {
@@ -104,7 +107,7 @@ test("conflicting explicit word limits are surfaced", () => {
 });
 
 test("safeguards can be deliberately disabled", () => {
-  const result = buildImprovedPrompt({ originalPrompt: "Buat ringkasan.", safeguards: { preserveIntent: false, avoidFabrication: false, review: false } });
+  const result = buildImprovedPrompt({ originalPrompt: "Buat ringkasan mendalam dari dokumen panjang ini dengan memeriksa konsistensi setiap fakta.", safeguards: { preserveIntent: false, avoidFabrication: false, review: false } });
   assert.ok(!result.includes("Pertahankan tujuan, fakta"));
   assert.ok(!result.includes("Jangan mengarang fakta"));
   assert.ok(!result.includes("Lakukan pemeriksaan akhir secara internal"));
