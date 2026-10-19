@@ -75,15 +75,16 @@ test("initial copy and download actions are disabled until a prompt is generated
 
 test("service worker cache includes the engine and adapter modules", () => {
   assert.match(serviceWorker, /prompt-improvements-__BUILD_ID__/);
-  for (const path of ["./src/app.js", "./src/prompt-engine.js", "./src/llm-client.js", "./src/templates.js"]) {
+  for (const path of ["./src/app.js", "./src/prompt-engine.js", "./src/llm-client.js", "./src/local-ai.js", "./src/web-search.js", "./src/templates.js"]) {
     assert.ok(serviceWorker.includes('"' + path + '"'), "missing app-shell entry " + path);
   }
 });
 
 test("privacy copy differentiates local structure mode from provider AI mode", () => {
   assert.match(html, /id="privacyModeNote"/);
-  assert.match(app, /Mode struktur lokal gratis bekerja di browser/);
-  assert.match(app, /Mode AI mengirim isi prompt dan konteks ke penyedia pilihanmu/);
+  assert.match(app, /Mode struktur gratis menyusun prompt/);
+  assert.match(app, /Mode API mengirim isi prompt dan konteks/);
+  assert.match(app, /RidTheWann Core menjawab langsung/);
 });
 
 
@@ -126,4 +127,22 @@ test("OpenRouter reasoning and web search controls are persistent, explicit, and
   assert.match(app, /function loadReasoningPrefs\(\)/);
   assert.match(app, /reasoningEffort,\s*webSearch,/);
   assert.match(app, /const supported = \$\("llmProvider"\)\.value === "openrouter"/);
+});
+
+
+test("RidTheWann Core is the default browser-local answer engine", () => {
+  assert.match(html, /<option value="local-ai" selected>RidTheWann Core/);
+  assert.match(html, /id="localModelPanel"/);
+  assert.match(html, /id="loadLocalModelButton"/);
+  assert.match(html, /id="conversationArchive"/);
+  assert.match(app, /async function runLocalAssistantTurn\(originalPrompt, settings\)/);
+  assert.match(app, /generateLocalAssistantReply\(/);
+  assert.match(app, /researchWebWithOpenRouter\(/);
+  assert.match(app, /searchWikipedia\(/);
+  assert.match(app, /$("engineMode").value === "local-ai"/);
+});
+
+test("GitHub Pages allows the pinned browser inference runtime and WebGPU workers", () => {
+  assert.match(html, /script-src[^"]*https:\/\/esm\.run[^"]*wasm-unsafe-eval/);
+  assert.match(html, /worker-src[^"]*blob:/);
 });
