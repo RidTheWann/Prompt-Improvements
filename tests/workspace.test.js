@@ -82,6 +82,13 @@ test("workspace validation rejects duplicate identifiers and malformed test case
   assert.throws(() => validateWorkspaceBackup(malformed), /Batas kata/);
 });
 
+test("workspace backup preserves the default RidTheWann Core engine mode", () => {
+  const backup = createWorkspaceBackup(fixture());
+  backup.workspace.engine.mode = "local-ai";
+  const restored = parseWorkspaceBackup(JSON.stringify(backup));
+  assert.equal(restored.workspace.engine.mode, "local-ai");
+});
+
 test("workspace backup rejects unknown formats and unsupported engine modes", () => {
   const backup = createWorkspaceBackup(fixture());
   backup.workspace.fields.outputFormat = "made-up";
