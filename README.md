@@ -1,33 +1,32 @@
 # Prompt Improvements
 
-**RidTheWann Core** is the default, browser-local chat engine in this project. It runs an open-weight language model through WebGPU, can answer ordinary questions, maintains short-lived conversation context, and can retrieve web context when useful. No model API key is required for local inference.
+**Prompt Improvements** is a prompt-engineering workbench: it turns a rough instruction into a clearer, more testable prompt while preserving the user’s original intent. The default **RidTheWann Core** engine runs an open-weight model locally through WebGPU to refine the prompt—not to execute or answer the task described inside it. No model API key is required for local inference.
 
-Prompt Improvements also retains a deterministic prompt-structuring workflow and optional external provider integrations. The UI is chat-first: submitted text leaves the composer, previous local turns remain visible for the current session, and the current reply can be copied or edited.
+The project also includes deterministic prompt structuring, optional hosted-model integrations, structural analysis, iterative edits, version history, and regression tests. If the browser model cannot load, the structured prompt draft remains available instead of placing an error message in the prompt output.
 
 ## What "RidTheWann Core" means
 
-RidTheWann Core is the **project-owned assistant engine and orchestration layer**, not a claim that RidTheWann trained the underlying foundation-model weights from scratch. The initial inference model is **Qwen3 0.6B** with a WebLLM browser runtime. This gives the project a model that executes locally in a supported browser, rather than outsourcing every answer to an API.
+RidTheWann Core is the **project-owned prompt-refinement engine and orchestration layer**, not a claim that RidTheWann trained the underlying foundation-model weights from scratch. The initial model is **Qwen3 0.6B** with a WebLLM browser runtime. It rewrites the user’s draft prompt locally; it must not answer the underlying request.
 
-- **Local default.** The selected model generates answers in the visitor's browser through WebGPU.
-- **No API key for inference.** The runtime and model weights must be downloaded on first use, so first startup requires an internet connection. Subsequent availability and caching depend on the browser.
-- **Optional web search.** The app can query Wikipedia's MediaWiki search API without a key. If a user explicitly configures a valid OpenRouter model and key, the app can also ask OpenRouter's web-search tool for broader search results; this part can incur provider charges and sends the query to that provider.
-- **Privacy boundaries.** Local prompts are passed to the local model in the browser. A web-search query is sent to the selected search service. API keys are held only in page memory and aren't written to localStorage or sessionStorage.
-- **Open model limits.** A 0.6B parameter model is intentionally small and may be weaker at complex reasoning, long context, coding, and factual detail than larger hosted models. Review important answers and sources.
+- **Local default.** The model refines the prompt in the visitor’s browser through WebGPU and returns a copyable prompt artifact.
+- **No API key for inference.** The runtime and model weights are downloaded on first use, so startup requires internet access. Later availability and caching depend on the browser.
+- **Optional web search.** Search can retrieve context from Wikipedia without a key or from OpenRouter when a key and model are explicitly configured. OpenRouter search can incur charges and sends the query to that provider.
+- **Privacy boundaries.** Normal prompt refinement is local. When web search is enabled, the query is sent to the selected search service. API keys stay in page memory and aren’t written to localStorage or sessionStorage.
+- **Open model limits.** A 0.6B parameter model may be weaker at complex prompt design than larger hosted models. Review the refined prompt before using it.
 
 ## Why this project exists
 
-A useful personal AI should have a stable identity, usable chat flow, local inference, safe tool routing, and measurable behavior—not just a dropdown for a hosted model. RidTheWann Core begins with a small open-weight model and a controlled browser runtime, while keeping prompt structuring, external models, and regression evaluation available as interchangeable capabilities.
+A useful prompt-improvement tool should preserve user intent, make meaningful changes, avoid invented context, and provide measurable ways to compare revisions. RidTheWann Core adds local model-assisted refinement while keeping deterministic structuring, external models, and regression evaluation as interchangeable engines.
 
 ## Current MVP
 
-- **Browser-local assistant.** RidTheWann Core runs Qwen3 0.6B through WebLLM with WebGPU and answers the user's underlying request directly.
-- **Open model + project identity.** The system instructions, chat orchestration, source handling, and UI belong to this repository; the base model weights remain upstream open-weight assets.
-- **Web retrieval.** Search-relevant questions can retrieve Wikipedia snippets and links. With OpenRouter configured, a separate web-search request may provide broader results before the local model writes the answer.
-- **Conversation continuity.** A bounded in-memory conversation window supports follow-up messages. Starting a new workspace clears the current chat context.
-- **Deterministic prompt builder.** Switch to **Struktur lokal** to generate a structured prompt without running a language model.
-- **Optional external model.** Use **AI via API key** for hosted-model output or prompt refinement; each provider has its own quota, privacy, CORS, and cost implications.
-- **Evaluation and iteration.** Advanced tests compare original and revised prompts against user-defined checks. Heuristic scores are structural guidance, not measures of truth.
-- **Portable output.** Copy the current answer or prompt, download Markdown, save versions, or export a validated workspace backup.
+- **Browser-local prompt refinement.** RidTheWann Core runs Qwen3 0.6B through WebLLM and returns a refined prompt instead of answering the original task.
+- **Project-owned integration.** Prompt-refinement instructions, orchestration, source handling, UI, and evaluation belong to this repository; pretrained base-model weights remain upstream assets.
+- **Optional web retrieval.** When enabled, web search may supply references for context-sensitive prompt work. Query routing is independent from the local model inference.
+- **Deterministic prompt builder.** **Struktur lokal** produces a structured prompt instantly without downloading or running a language model.
+- **Optional external model.** Use **AI via API key** when a hosted model is preferable for prompt refinement; each provider has its own quota, privacy, CORS, and cost implications.
+- **Evaluation and iteration.** Analyze prompt structure, keep revisions, and compare original and revised prompts against user-defined checks. Heuristic scores are structural guidance, not measures of correctness.
+- **Portable output.** Copy the refined prompt, download Markdown, save versions, or export a validated workspace backup.
 - **No-server deployment.** The GitHub Pages app is static; model inference is performed in the visitor's browser. No API key or server secret is embedded in the repository.
 
 ## Run locally
@@ -52,9 +51,9 @@ The tests validate local prompt assembly, web-search sanitization, backup valida
 
 ## Local-model behavior
 
-The browser runtime is initialized on demand from a pinned WebLLM release and loads the `Qwen3-0.6B-q4f16_1-MLC` model. The model stays on the client and generates token streams in the browser. If WebGPU is unavailable, model download fails, or the browser runs out of memory, the app reports an error and the deterministic or external API modes remain available.
+The browser runtime is initialized on demand from a pinned WebLLM release and loads the `Qwen3-0.6B-q4f16_1-MLC` model. It stays on the client and refines the prompt in the browser. Failed runtime imports are retryable. If WebGPU, a CDN connection, model download, or browser memory prevents inference, the error appears in the status area and the deterministic structured prompt remains the output fallback—diagnostic text is never inserted as the prompt.
 
-Web search uses a simple relevance gate to avoid searching for every message. The no-key path uses Wikipedia's public MediaWiki API and displays source links separately from the answer. If OpenRouter credentials/model are configured, its server-side search tool can be used for broader retrieval; that request is independent from the local inference pass. The app does not claim an answer is verified merely because a search was attempted.
+Web search uses a simple relevance gate. The no-key path uses Wikipedia’s public MediaWiki API and displays source links separately from the prompt output. If OpenRouter credentials/model are configured, its search tool can retrieve broader context and may incur provider charges. Retrieved pages are treated as untrusted data and are never followed as higher-priority instructions.
 
 # Rujukan desain dan keamanan
 
@@ -65,17 +64,17 @@ Web search uses a simple relevance gate to avoid searching for every message. Th
 
 ## Continuous improvement
 
-The local AI path answers the underlying request directly; it doesn't automatically rewrite every message as a prompt. Switch to **Struktur lokal** when you specifically want a prompt artifact, add task context when it materially helps, and use the advanced evaluation tools when repeatable comparisons matter.
+Every engine mode is designed to produce or improve a prompt, not to carry out the task described in that prompt. RidTheWann Core uses the structured draft as its starting point; if local generation fails, the draft is still available. Use the analysis, version history, and evaluation tools to check that a revision is actually better.
 
 The local model and retrieval routing are starting points—not guarantees of strong reasoning. Use source links to verify current facts and build representative test cases before judging model changes. Larger local models, task-specific fine-tuning, and a model trained with the project's own weights are future research, not part of this initial browser deployment.
 
 ## Optional API and broader web search
 
-The external-provider mode remains available when a larger hosted model is preferable, or when you want broader OpenRouter web search before the local model drafts its answer.
+The external-provider mode remains available when a larger hosted model is preferable for prompt refinement, or when you need broader OpenRouter search context before revising a prompt.
 
 1. Open the **+** menu → **Pengaturan engine**, choose **AI via API key**, select OpenRouter (or another supported provider), and enter your API key.
 2. Click **Cek koneksi & model** and select a model returned by the provider.
-3. In **RidTheWann Core** mode, a configured OpenRouter key can be used only for the optional web-research step. In **AI via API key** mode, the hosted model itself generates the output.
+3. In **RidTheWann Core** mode, a configured OpenRouter key can be used only for the optional web-research step before local prompt refinement. In **AI via API key** mode, the hosted model refines the prompt itself.
 
 Keys exist only in the active page's memory and are not included in backups or exported files. They are removed when the page reloads. Use provider spending limits, avoid shared devices, and don't send sensitive data to any external search/provider.
 
