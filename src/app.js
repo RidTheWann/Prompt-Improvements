@@ -496,7 +496,6 @@ async function runLocalAssistantTurn(originalPrompt, settings) {
     $("improvedPrompt").value = answer;
     localConversation.push({ role: "user", content: originalPrompt }, { role: "assistant", content: answer });
     localConversation = localConversation.slice(-12);
-    renderLocalConversationArchive();
     $("assistantReplyIntro").textContent = sources.length
       ? "Dijawab oleh RidTheWann Core dengan model lokal. Sumber web tersedia di bawah; periksa sumber untuk klaim penting."
       : searchNote
@@ -1787,7 +1786,7 @@ async function copyPrompt() {
       area.remove();
       if (!copied) throw new Error("Clipboard unavailable");
     }
-    showToast("Prompt disalin ke clipboard.");
+    showToast($("engineMode").value === "local-ai" ? "Jawaban disalin ke clipboard." : "Prompt disalin ke clipboard.");
   } catch {
     showToast("Clipboard tidak tersedia. Pilih teks hasil lalu salin secara manual.");
   }
