@@ -219,7 +219,7 @@ test("all WebLLM CDN failures report each endpoint and can be retried", async ()
   await assert.rejects(load(), (error) => {
     assert.match(error.message, /Semua sumber CDN gagal memuat runtime WebLLM/);
     assert.match(error.message, /esm\.run/);
-    assert.match(error.message, /esm\.run/);
+    assert.match(error.message, /esm\.sh/);
     assert.match(error.message, /cdn\.jsdelivr\.net/);
     return true;
   });
