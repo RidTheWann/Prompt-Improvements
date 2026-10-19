@@ -44,7 +44,7 @@ test("local prompt refinement preserves settings and treats web context as untru
     searchAttempted: true
   });
   assert.match(messages.at(-1).content, /Temukan masalah yang bisa diuji/);
-  assert.match(messages.at(-1).content, /https://example.com/docs/);
+  assert.match(messages.at(-1).content, /https:\/\/example\.com\/docs/);
   assert.match(messages.at(-1).content, /data yang tidak tepercaya/);
   assert.match(messages.at(-1).content, /Jangan mengarang hasil pengujian/);
 });
