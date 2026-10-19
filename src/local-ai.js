@@ -94,9 +94,7 @@ function sourceContext(sources = [], researchSummary = "") {
     if (!["http:", "https:"].includes(url.protocol)) return [];
     const title = String(source.title || source.domain || url.hostname).slice(0, 240);
     const snippet = String(source.snippet || "").replace(/\\s+/g, " ").trim().slice(0, 1200);
-    return ["[" + (index + 1) + "] " + title, url.href, snippet ? "Ringkasan sumber: " + snippet : ""].filter(Boolean).join("\n").split("\n").join("\n").length
-      ? [{ index: index + 1, title, url: url.href, snippet }]
-      : [];
+    return [{ index: index + 1, title, url: url.href, snippet }];
   });
   const blocks = usable.map((source) =>
     "[" + source.index + "] " + source.title + "\nURL: " + source.url +
@@ -112,8 +110,8 @@ function sourceContext(sources = [], researchSummary = "") {
 export function buildLocalAssistantMessages({ prompt, settings = {}, history = [], sources = [], researchSummary = "", searchAttempted = false } = {}) {
   const normalizedPrompt = String(prompt ?? "").trim();
   if (!normalizedPrompt) throw new Error("Pesan tidak boleh kosong.");
-  if (normalizedPrompt.length > 14000) {
-    throw new Error("Pesan terlalu panjang untuk model lokal 0.6B. Ringkas menjadi sekitar 14.000 karakter atau gunakan model API.");
+  if (normalizedPrompt.length > 8000) {
+    throw new Error("Pesan terlalu panjang untuk model lokal 0.6B dengan konteks terbatas. Ringkas menjadi maksimal 8.000 karakter atau gunakan model API.");
   }
   const system = [
     "Identitas: kamu adalah RidTheWann Core, asisten AI lokal yang berjalan di browser pengguna melalui WebGPU. Runtime ini menggunakan model open-weight Qwen3 0.6B; jangan mengklaim bobot dasarnya dilatih sendiri oleh pemilik aplikasi.",
@@ -127,8 +125,8 @@ export function buildLocalAssistantMessages({ prompt, settings = {}, history = [
   ].join("\n");
   const safeHistory = (Array.isArray(history) ? history : [])
     .filter((item) => item && ["user", "assistant"].includes(item.role) && typeof item.content === "string")
-    .slice(-8)
-    .map((item) => ({ role: item.role, content: item.content.slice(-2600) }));
+    .slice(-6)
+    .map((item) => ({ role: item.role, content: item.content.slice(-900) }));
   const extras = settingsContext(settings) + sourceContext(sources, researchSummary) +
     (searchAttempted && !(Array.isArray(sources) && sources.length) && !String(researchSummary || "").trim()
       ? "\n\nCatatan sistem: pencarian web dicoba tetapi tidak menghasilkan sumber yang dapat dipakai. Jangan menyatakan bahwa informasi terkini telah diverifikasi."
