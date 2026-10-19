@@ -56,6 +56,12 @@ try {
   assert.equal(await page.locator("#copyButton").isDisabled(), true);
   assert.equal(await page.locator("#analyzeButton").isVisible(), false, "analysis is hidden from the beginner flow");
 
+  // This smoke flow tests the deterministic, zero-network mode. The UI now
+  // defaults to RidTheWann Core; select rules mode to keep this test offline.
+  await page.locator("#engineSettings").evaluate((element) => { element.open = true; });
+  await page.locator("#engineMode").selectOption("rules");
+  await page.locator("#engineSettings").evaluate((element) => { element.open = false; });
+
   const original = "Buat email singkat untuk mengucapkan terima kasih.";
   await page.locator("#originalPrompt").fill(original);
   await page.locator("#improveButton").click();
