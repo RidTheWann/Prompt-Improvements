@@ -1,6 +1,6 @@
 # Prompt Improvements
 
-A chat-first prompt builder with an adaptive deterministic engine and optional AI refinement. Send a request to see it in the conversation, follow the generation status, then copy the finished prompt. Optional tools, examples, engine settings, and history are tucked into the composer's **+** menu and a compact sidebar drawer. The default path works in the browser without an API key; advanced evaluation remains available when repeatable testing is needed.
+A chat-first prompt builder with a local deterministic engine and optional AI refinement. Sent text leaves the composer and appears in the conversation; the assistant response is rendered as readable chat content with a copy-ready prompt and optional editing. Examples, context, engine settings, and history are tucked into the composer's **+** menu and a compact sidebar drawer. Advanced evaluation remains available when repeatable testing is needed.
 
 ## Why this project exists
 
@@ -10,10 +10,13 @@ Prompt improvement should be a repeatable engineering workflow—not a one-shot 
 
 - **Free by default.** Deterministic mode runs in the browser; optional AI refinement uses your own API key.
 - **Structured refinement.** Keep the original request while adding optional objective, context, audience, constraints, output format, and success criteria.
+- **Reasoning controls.** OpenRouter models that support reasoning can be configured from automatic through extra-high effort. Private chain-of-thought is never shown in the UI.
+- **Web-grounded refinement.** With OpenRouter selected, the model can use the server-side web-search tool when current documentation, versions, or changing facts materially improve a prompt. Returned source citations appear as separate links.
+- **Chat-native output.** The composer clears when a request is sent. The submitted message stays in the conversation, with explicit edit/copy actions for the assistant's result.
 - **Transparent quality checks.** Heuristic signals highlight missing prompt structure. They are guidance, not a measure of factual correctness or guaranteed model performance.
 - **Iterative versions.** Save prompt versions in browser storage, review previous drafts, and restore them.
 - **Portable output.** Copy or download a prompt as Markdown or JSON.
-- **Privacy by default.** Prompt versions remain in browser local storage. AI mode sends prompt text only to the provider you choose, using your own key; the app has no analytics or intermediary server.
+- **Privacy by default.** Prompt versions and reasoning preferences remain in browser local storage. AI mode sends prompt text and supplied context to the selected provider. API keys remain in page memory and are never persisted. With web search enabled, relevant context can also be processed by OpenRouter's server-side search tool; additional usage charges may apply.
 
 ## Run locally
 
@@ -39,7 +42,7 @@ npm test
 
 The deterministic engine classifies common task intents and adapts the structure instead of forcing one template onto every request. Simple tasks stay concise; complex tasks can receive tailored steps, success criteria, source-data boundaries, and conflict warnings. Scores are heuristic indicators only, not measures of factual accuracy or model quality. The engine treats missing optional details as optional and reserves clarification questions for information that would materially change the result.
 
-The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, and response-truncation detection. Browser-to-provider requests depend on each provider's key, quota, and CORS behavior. Avoid storing API keys on shared devices and do not submit sensitive data to external providers unless authorized.
+The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, response-truncation detection, OpenRouter reasoning controls, and cited web-search metadata. Browser-to-provider requests depend on each provider's key, quota, CORS behavior, and supported model features. To enable reasoning and web search, open the **+** menu → **Pengaturan engine**, select **AI via API key** and **OpenRouter**, enter a key, then choose reasoning effort and web search. Avoid shared-device credentials and sensitive data.
 
 ## Rujukan desain dan keamanan
 
