@@ -82,8 +82,8 @@ test("service worker cache includes the engine and adapter modules", () => {
 
 test("privacy copy differentiates local structure mode from provider AI mode", () => {
   assert.match(html, /id="privacyModeNote"/);
-  assert.match(app, /Mode gratis menyusun prompt langsung di browser/);
-  assert.match(app, /Mode AI mengirim isi prompt dan konteks ke penyedia/);
+  assert.match(app, /Mode struktur lokal gratis bekerja di browser/);
+  assert.match(app, /Mode AI mengirim isi prompt dan konteks ke penyedia pilihanmu/);
 });
 
 
