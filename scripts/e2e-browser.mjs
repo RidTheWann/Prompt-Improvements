@@ -139,8 +139,10 @@ try {
   await page.locator('.history-card button[data-action="restore"]').first().click();
   await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 2);
-  assert.equal(await page.locator("#originalPrompt").inputValue(), original);
+  assert.equal(await page.locator("#originalPrompt").inputValue(), "", "restoring a version should leave the composer ready for a new message");
+  assert.equal(await page.locator("#chatUserPromptText").textContent(), original, "restored request should remain in the chat history");
   assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
+  assert.equal(await page.locator("#promptPreview").isVisible(), true);
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
 
   await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
