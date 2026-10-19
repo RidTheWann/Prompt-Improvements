@@ -13,6 +13,34 @@ try {
     permissions: ["clipboard-read", "clipboard-write"]
   });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.__e2eStreamCancelled = 0;
+    window.fetch = async (input, options) => {
+      const requestUrl = new URL(typeof input === "string" ? input : input.url, location.href);
+      if (requestUrl.origin === location.origin && requestUrl.pathname === "/v1/models") {
+        return new Response(JSON.stringify({ data: [{ id: "e2e-model" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (requestUrl.origin === location.origin && requestUrl.pathname === "/v1/chat/completions") {
+        const encoder = new TextEncoder();
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Jawaban AI lama"}}]}\n\n'));
+          },
+          cancel() {
+            window.__e2eStreamCancelled += 1;
+          }
+        }), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" }
+        });
+      }
+      return nativeFetch(input, options);
+    };
+  });
   const externalRequests = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("request", (request) => {
@@ -63,6 +91,38 @@ try {
   await page.reload({ waitUntil: "networkidle" });
   assert.equal(await page.locator("#llmApiKey").inputValue(), "", "API key is intentionally cleared on reload");
   console.log("[PASS] API key remains memory-only and is cleared on reload");
+
+  await page.locator("#engineSettings").evaluate((element) => { element.open = true; });
+  await page.locator("#engineMode").selectOption("ai");
+  await page.locator("#llmProvider").selectOption("custom");
+  await page.locator("#llmEndpoint").fill(new URL("/v1", appUrl).href);
+  await page.locator("#llmApiKey").fill("");
+  await page.locator("#checkLlmButton").click();
+  await page.waitForFunction(() => document.querySelector("#llmModel").value === "e2e-model");
+  console.log("[PASS] AI model discovery uses the local deterministic mock");
+
+  await page.locator("#originalPrompt").fill("Prompt lama yang harus dibatalkan.");
+  await page.locator("#improveButton").click();
+  await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("Jawaban AI lama"));
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
+  await page.waitForFunction(() => window.__e2eStreamCancelled >= 1);
+  assert.equal(await page.locator("#originalPrompt").inputValue(), "");
+  assert.equal(await page.locator("#improvedPrompt").inputValue(), "");
+  assert.equal(await page.locator("#resultStatus").textContent(), "Menunggu input");
+  console.log("[PASS] Starting a new workspace cancels streaming without restoring stale output");
+
+  await page.locator("#originalPrompt").fill("Prompt lain yang akan diganti versi tersimpan.");
+  await page.locator("#improveButton").click();
+  await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("Jawaban AI lama"));
+  await page.locator('.history-card button[data-action="restore"]').first().click();
+  await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
+  await page.waitForFunction(() => window.__e2eStreamCancelled >= 2);
+  assert.equal(await page.locator("#originalPrompt").inputValue(), original);
+  assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
+  console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
+  await page.locator("#resetButton").click();
+  await page.locator("#engineMode").selectOption("rules");
 
   await page.locator('button[data-template="learn"]').click();
   assert.match(await page.locator("#originalPrompt").inputValue(), /\[topik\]/);
