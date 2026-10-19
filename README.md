@@ -1,6 +1,6 @@
 # Prompt Improvements
 
-A guided prompt builder with an adaptive deterministic engine and optional AI refinement. The default path works in the browser without an API key; advanced evaluation remains available when repeatable testing is needed.
+A chat-first prompt builder with an adaptive deterministic engine and optional AI refinement. Send a request to see it in the conversation, follow the generation status, then copy the finished prompt. Optional tools, examples, engine settings, and history are tucked into the composer's **+** menu and a compact sidebar drawer. The default path works in the browser without an API key; advanced evaluation remains available when repeatable testing is needed.
 
 ## Why this project exists
 

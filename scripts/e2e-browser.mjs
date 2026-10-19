@@ -59,13 +59,17 @@ try {
   const original = "Buat email singkat untuk mengucapkan terima kasih.";
   await page.locator("#originalPrompt").fill(original);
   await page.locator("#improveButton").click();
+  await page.locator("#assistantThinking").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#chatUserBubble").isVisible(), true, "the request should appear in chat immediately");
+  assert.equal(await page.locator("#outputPanel").isVisible(), false, "the final prompt stays hidden while generating");
   await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("## Permintaan asli"));
   const output = await page.locator("#improvedPrompt").inputValue();
   assert.ok(output.includes(original), "generated prompt must preserve the source request");
   assert.equal(await page.locator("#copyButton").isDisabled(), false);
   assert.equal(await page.locator("#saveButton").isDisabled(), false);
   assert.equal(await page.locator("#outputPanel").evaluate((element) => element.classList.contains("has-result")), true);
-  console.log("[PASS] Default-mode prompt generation, result state, and source fidelity");
+  assert.equal(await page.locator("#assistantThinking").isVisible(), false, "generation state should disappear when the result is ready");
+  console.log("[PASS] Chat message, generation status, final output state, and source fidelity");
 
   await page.locator("#copyButton").click();
   await page.waitForFunction(() => document.querySelector("#toast").textContent.includes("Prompt disalin"));
@@ -77,6 +81,8 @@ try {
   assert.equal(await page.locator(".history-card").count(), 1, "saved version must survive a reload");
   console.log("[PASS] Clipboard copy and local history persistence");
 
+  await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="engine"]').click();
   await page.locator("#engineSettings").evaluate((element) => { element.open = true; });
   await page.locator("#engineMode").selectOption("ai");
   await page.locator("#llmApiKey").fill("e2e-secret-must-not-persist");
@@ -92,6 +98,9 @@ try {
   assert.equal(await page.locator("#llmApiKey").inputValue(), "", "API key is intentionally cleared on reload");
   console.log("[PASS] API key remains memory-only and is cleared on reload");
 
+  // Exercise the optional AI engine with a local stream that stays open until cancelled.
+  await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="engine"]').click();
   await page.locator("#engineSettings").evaluate((element) => { element.open = true; });
   await page.locator("#engineMode").selectOption("ai");
   await page.locator("#llmProvider").selectOption("custom");
@@ -100,30 +109,42 @@ try {
   await page.locator("#checkLlmButton").click();
   await page.waitForFunction(() => document.querySelector("#llmModel").value === "e2e-model");
   console.log("[PASS] AI model discovery uses the local deterministic mock");
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
 
   await page.locator("#originalPrompt").fill("Prompt lama yang harus dibatalkan.");
   await page.locator("#improveButton").click();
-  await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("Jawaban AI lama"));
-  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelector("#thinkingMessage").textContent.includes("AI sedang menghasilkan"));
+  assert.equal(await page.locator("#outputPanel").isVisible(), false, "the final prompt must stay hidden during AI streaming");
+  await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="new"]').click();
   await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 1);
   assert.equal(await page.locator("#originalPrompt").inputValue(), "");
   assert.equal(await page.locator("#improvedPrompt").inputValue(), "");
+  assert.equal(await page.locator("#assistantThinking").isVisible(), false);
   assert.equal(await page.locator("#resultStatus").textContent(), "Menunggu input");
-  console.log("[PASS] Starting a new workspace cancels streaming without restoring stale output");
+  console.log("[PASS] New workspace cancels streaming without restoring stale output");
 
   await page.locator("#originalPrompt").fill("Prompt lain yang akan diganti versi tersimpan.");
   await page.locator("#improveButton").click();
-  await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("Jawaban AI lama"));
+  await page.waitForFunction(() => document.querySelector("#thinkingMessage").textContent.includes("AI sedang menghasilkan"));
+  await page.locator("#sidebarToggle").click();
   await page.locator('.history-card button[data-action="restore"]').first().click();
   await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 2);
   assert.equal(await page.locator("#originalPrompt").inputValue(), original);
   assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
-  await page.locator("#resetButton").click();
-  await page.locator("#engineMode").selectOption("rules");
 
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
+  await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="engine"]').click();
+  await page.locator("#engineMode").selectOption("rules");
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
+
+  await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="new"]').click();
+  await page.locator("#composerPlusButton").click();
   await page.locator('button[data-template="learn"]').click();
   assert.match(await page.locator("#originalPrompt").inputValue(), /\[topik\]/);
   await page.setViewportSize({ width: 390, height: 844 });
