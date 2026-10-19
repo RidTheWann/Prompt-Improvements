@@ -7,6 +7,7 @@ import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS }
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const LLM_CONFIG_KEY = "prompt-improvements.llm.v1";
+const REASONING_PREFS_KEY = "prompt-improvements.reasoning.v1";
 const KEY_SESSION = "prompt-improvements.api-key.session";
 const KEY_PERSIST = "prompt-improvements.api-key.persist";
 const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
@@ -20,7 +21,10 @@ let lastAnalysis = null;
 let iterationNotes = [];
 let toastTimer = null;
 let llmConfig = loadLlmConfig();
+let reasoningPrefs = loadReasoningPrefs();
 let llmModels = [];
+let activePromptText = "";
+let activeWebSources = [];
 let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
 let activeOptimizationController = null;
@@ -101,6 +105,24 @@ function readStoredKey() {
   return "";
 }
 
+function loadReasoningPrefs() {
+  const defaults = { effort: "medium", webSearch: true };
+  try {
+    const stored = JSON.parse(localStorage.getItem(REASONING_PREFS_KEY) || "{}");
+    const validEfforts = ["auto", "minimal", "low", "medium", "high", "xhigh"];
+    return {
+      effort: validEfforts.includes(stored.effort) ? stored.effort : defaults.effort,
+      webSearch: typeof stored.webSearch === "boolean" ? stored.webSearch : defaults.webSearch
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function saveReasoningPrefs() {
+  reasoningPrefs = { effort: $("reasoningEffort").value, webSearch: $("webSearchEnabled").checked };
+  try { localStorage.setItem(REASONING_PREFS_KEY, JSON.stringify(reasoningPrefs)); } catch { /* Optional setting. */ }
+}
 
 function endpointValue() {
   configureConnection({ provider: $("llmProvider").value, apiKey: $("llmApiKey").value });
@@ -171,20 +193,35 @@ function initializeLlmSettings() {
     $("llmModel").append(option);
     $("llmModel").value = llmConfig.model;
   }
+  $("reasoningEffort").value = reasoningPrefs.effort;
+  $("webSearchEnabled").checked = reasoningPrefs.webSearch;
   updateProviderFields();
   updateEngineLabel();
 }
 
 function updateProviderFields() {
   $("llmEndpointField").hidden = $("llmProvider").value !== "custom";
+  updateReasoningControls();
+}
+
+function updateReasoningControls() {
+  const supported = $("llmProvider").value === "openrouter";
+  $("reasoningEffort").disabled = !supported;
+  $("webSearchEnabled").disabled = !supported;
+  $("reasoningHelp").textContent = supported
+    ? "Reasoning internal berjalan tanpa menampilkan rantai pikiran. Web search berjalan bila relevan; pencarian memakai kredit dan dapat menambah biaya selain token model."
+    : "Reasoning terarah dan web search pada versi ini memerlukan penyedia OpenRouter. Pilihan ini tidak dikirim ke penyedia lain.";
 }
 
 function updateEngineLabel() {
   const useAi = $("engineMode").value === "ai";
   $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
+  const openRouter = $("llmProvider").value === "openrouter";
+  const webEnabled = openRouter && $("webSearchEnabled").checked;
   $("privacyModeNote").textContent = useAi
-    ? "Mode AI mengirim isi prompt dan konteks ke penyedia yang kamu pilih. API key digunakan langsung dari browser; key tidak masuk ke backup. Gunakan key dengan batas pengeluaran dan hindari data sensitif."
-    : "Mode gratis menyusun prompt langsung di browser tanpa API key atau biaya token. Tidak ada permintaan AI yang dikirim sampai kamu memilih Mode AI.";
+    ? "Mode AI mengirim isi prompt dan konteks ke penyedia pilihanmu. API key hanya berada di memori halaman. " + (webEnabled ? "Pencarian web aktif; fitur ini dapat memakai kredit OpenRouter." : "Penyempurnaan dilakukan tanpa web search.")
+    : "Mode struktur lokal gratis bekerja di browser. Reasoning model dan pencarian internet baru berjalan saat kamu memilih Mode AI.";
+  updateReasoningControls();
   if (!useAi) setLlmStatus("Mode gratis aktif · tidak membutuhkan API key.");
   else if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
   else setLlmStatus("Untuk memakai AI, masukkan API key lalu cek koneksi.");
@@ -249,10 +286,10 @@ function cancelAiImprovement() {
   }
 }
 
-async function runSelectedEngine() {
+async function runSelectedEngine({ reuseActivePrompt = false } = {}) {
   if (activeGeneration || activeAiController) return;
 
-  const originalPrompt = currentOriginal();
+  const originalPrompt = $("originalPrompt").value.trim() || (reuseActivePrompt ? activePromptText : "");
   if (!originalPrompt) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
@@ -304,7 +341,12 @@ async function runSelectedEngine() {
     return;
   }
 
-  beginAssistantTurn(originalPrompt, "Menghubungi model AI...");
+  const useOpenRouterTools = $("llmProvider").value === "openrouter";
+  const reasoningEffort = useOpenRouterTools ? $("reasoningEffort").value : "auto";
+  const webSearch = useOpenRouterTools && $("webSearchEnabled").checked;
+  beginAssistantTurn(originalPrompt, webSearch
+    ? "Menganalisis permintaan dan mencari sumber web bila diperlukan..."
+    : "Menganalisis instruksi dan menyusun prompt...");
   cancelButton.hidden = false;
   cancelButton.disabled = false;
   $("improveButtonText").textContent = "AI sedang bekerja...";
@@ -340,7 +382,19 @@ async function runSelectedEngine() {
       originalPrompt,
       structuredDraft: draftToImprove,
       settings,
+      reasoningEffort,
+      webSearch,
       signal: controller.signal,
+      onSources: (sources) => {
+        const seen = new Set();
+        activeWebSources = [...activeWebSources, ...sources].filter((source) => {
+          if (!source?.url || seen.has(source.url)) return false;
+          seen.add(source.url);
+          return true;
+        }).slice(0, 10);
+        renderWebSources(activeWebSources);
+        $("thinkingMessage").textContent = "Sumber web ditemukan. Memeriksa relevansi dan merapikan prompt...";
+      },
       onChunk: (_chunk, accumulated) => {
         if (operationId !== activeAiOperationId || controller.signal.aborted) return;
         // Keep the final prompt hidden until the model finishes. Retain partial
@@ -1139,6 +1193,7 @@ function applyWorkspaceBackup(backup) {
   }
   updateWordCounts();
   updateEngineLabel();
+  activePromptText = "";
   $("resultStatus").textContent = "Workspace dipulihkan";
 }
 
@@ -1191,6 +1246,9 @@ function showToast(message) {
 }
 
 function beginAssistantTurn(originalPrompt, message) {
+  activePromptText = originalPrompt;
+  activeWebSources = [];
+  renderWebSources([]);
   $("assistantThinking").classList.remove("is-cancelled");
   const bubble = $("chatUserBubble");
   const bubbleText = $("chatUserPromptText");
@@ -1205,6 +1263,7 @@ function beginAssistantTurn(originalPrompt, message) {
   $("assistantThinking").hidden = false;
   $("thinkingMessage").textContent = message;
   $("resultStatus").textContent = "Sedang diproses";
+  $("originalPrompt").value = "";
   updateWordCounts();
   window.requestAnimationFrame(() => {
     $("assistantThinking").scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1220,7 +1279,7 @@ function revealOutputPanel() {
   if (welcome) welcome.classList.add("has-conversation");
   const bubble = $("chatUserBubble");
   const bubbleText = $("chatUserPromptText");
-  const promptVal = currentOriginal();
+  const promptVal = activePromptText || currentOriginal();
   if (bubble && bubbleText && promptVal) {
     bubbleText.textContent = promptVal;
     bubble.hidden = false;
@@ -1229,12 +1288,38 @@ function revealOutputPanel() {
 }
 
 function currentOriginal() {
-  return $("originalPrompt").value.trim();
+  return activePromptText || $("originalPrompt").value.trim();
+}
+
+function renderPromptPreview() {
+  const preview = $("promptPreview");
+  if (preview) preview.textContent = $("improvedPrompt").value;
+}
+
+function renderWebSources(sources) {
+  const container = $("webSources");
+  const list = $("webSourceList");
+  if (!container || !list) return;
+  list.replaceChildren();
+  for (const source of Array.isArray(sources) ? sources : []) {
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (!["http:", "https:"].includes(url.protocol)) continue;
+    const link = document.createElement("a");
+    link.href = url.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = source.title || source.domain || url.hostname;
+    link.title = url.hostname;
+    list.append(link);
+  }
+  container.hidden = list.childElementCount === 0;
 }
 
 function updateWordCounts() {
-  const originalWords = wordCount(currentOriginal());
+  const originalWords = wordCount($("originalPrompt").value.trim());
   const output = $("improvedPrompt").value;
+  renderPromptPreview();
   $("wordCount").textContent = originalWords + " kata";
   $("inputHint").textContent = originalWords === 0
     ? "Satu kalimat sudah cukup. Detail tambahan bersifat opsional."
@@ -1321,7 +1406,7 @@ function renderAnalysis(analysis) {
 }
 
 function analyzeCurrentPrompt() {
-  const original = currentOriginal();
+  const original = $("originalPrompt").value.trim() || activePromptText;
   if (!original) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
@@ -1336,7 +1421,7 @@ function analyzeCurrentPrompt() {
 }
 
 function buildCurrentPrompt() {
-  const original = currentOriginal();
+  const original = $("originalPrompt").value.trim() || activePromptText;
   if (!original) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
@@ -1422,10 +1507,16 @@ async function copyPrompt() {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(value);
     } else {
-      const area = $("improvedPrompt");
-      area.focus();
+      const area = document.createElement("textarea");
+      area.value = value;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      area.style.pointerEvents = "none";
+      document.body.append(area);
       area.select();
       const copied = document.execCommand("copy");
+      area.remove();
       if (!copied) throw new Error("Clipboard unavailable");
     }
     showToast("Prompt disalin ke clipboard.");
@@ -1536,8 +1627,9 @@ function restoreVersion(id) {
   const version = savedVersions.find((item) => item.id === id);
   if (!version) return;
   invalidateActiveAiOperation("Versi riwayat dipulihkan");
+  activePromptText = version.originalPrompt;
   const settings = version.settings ?? {};
-  $("originalPrompt").value = version.originalPrompt;
+  $("originalPrompt").value = "";
   $("objective").value = settings.objective ?? "";
   $("context").value = settings.context ?? "";
   $("audience").value = settings.audience ?? "";
@@ -1561,6 +1653,9 @@ function restoreVersion(id) {
 
 function clearWorkspace() {
   invalidateActiveAiOperation("Workspace baru dibuka");
+  activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
   for (const id of fields) {
     if (id === "outputFormat") $(id).value = "auto";
     else $(id).value = "";
@@ -1610,6 +1705,21 @@ function clearWorkspace() {
 }
 
 $("originalPrompt").addEventListener("input", updateWordCounts);
+$("reasoningEffort").addEventListener("change", () => { saveReasoningPrefs(); updateEngineLabel(); });
+$("webSearchEnabled").addEventListener("change", () => { saveReasoningPrefs(); updateEngineLabel(); });
+$("editPromptButton").addEventListener("click", () => {
+  const editing = !$("improvedPrompt").hidden;
+  $("improvedPrompt").hidden = editing;
+  $("promptPreview").hidden = !editing;
+  $("editPromptButton").textContent = editing ? "Edit prompt" : "Selesai mengedit";
+  $("editPromptButton").setAttribute("aria-pressed", String(!editing));
+  if (editing) {
+    renderPromptPreview();
+    $("promptPreview").focus();
+  } else {
+    $("improvedPrompt").focus();
+  }
+});
 $("improvedPrompt").addEventListener("input", () => {
   updateWordCounts();
   const original = currentOriginal();
@@ -1685,7 +1795,7 @@ $("iterateButton").addEventListener("click", () => {
   }
   iterationNotes.push(feedback);
   $("iterationFeedback").value = "";
-  runSelectedEngine();
+  runSelectedEngine({ reuseActivePrompt: true });
 });
 $("saveButton").addEventListener("click", createVersion);
 $("copyButton").addEventListener("click", copyPrompt);
@@ -1751,6 +1861,14 @@ function applyTemplate(id) {
     $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
   }
   $("improvedPrompt").value = "";
+  activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
+  $("chatUserBubble").hidden = true;
+  $("chatUserPromptText").textContent = "";
+  $("outputPanel").hidden = true;
+  $("assistantThinking").hidden = true;
+  $("chatWelcome").classList.remove("has-conversation");
   iterationNotes = [];
   updateWordCounts();
   toggleComposerMenu(false);
