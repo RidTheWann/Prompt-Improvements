@@ -7,12 +7,41 @@ export const LOCAL_MODEL = Object.freeze({
   context: 4096
 });
 
+const MAX_OUTPUT_TOKENS = 768;
+const CONTEXT_SAFETY_TOKENS = 256;
+const MAX_INPUT_TOKENS = LOCAL_MODEL.context - MAX_OUTPUT_TOKENS - CONTEXT_SAFETY_TOKENS;
+
 let webllmPromise = null;
 let enginePromise = null;
 let localEngine = null;
 
 export function supportsLocalInference() {
   return typeof navigator !== "undefined" && Boolean(navigator.gpu);
+}
+
+/**
+ * Conservative context estimate. The production runtime uses Qwen's tokenizer,
+ * but this wrapper does not rely on an unstable runtime tokenizer API. Keep a
+ * 256-token margin in addition to the generation budget to reduce overflow risk.
+ */
+export function estimateLocalInputTokens(messages) {
+  const characters = (Array.isArray(messages) ? messages : []).reduce(
+    (total, message) => total + String(message?.content ?? "").length,
+    0
+  );
+  return Math.ceil(characters / 3);
+}
+
+function assertLocalContextBudget(messages) {
+  const estimatedTokens = estimateLocalInputTokens(messages);
+  if (estimatedTokens > MAX_INPUT_TOKENS) {
+    throw new Error(
+      "Konteks prompt lokal terlalu panjang (perkiraan " + estimatedTokens +
+      " token; batas input konservatif " + MAX_INPUT_TOKENS +
+      " token dari konteks " + LOCAL_MODEL.context +
+      "). Ringkas prompt, draf, atau konteks web lalu coba lagi. Model belum dimuat."
+    );
+  }
 }
 
 export function isLocalModelReady() {
@@ -218,10 +247,12 @@ export function buildLocalPromptMessages({
     searchContext
   ].join("\n");
 
-  return [
+  const messages = [
     { role: "system", content: system },
     { role: "user", content: task }
   ];
+  assertLocalContextBudget(messages);
+  return messages;
 }
 
 export async function improvePromptWithLocalModel({
@@ -233,10 +264,12 @@ export async function improvePromptWithLocalModel({
   searchAttempted = false,
   signal,
   onProgress,
-  onChunk
+  onChunk,
+  // Dependency injection keeps local inference behavior testable without downloading weights.
+  prepareModel = prepareLocalModel
 } = {}) {
-  const engine = await prepareLocalModel({ onProgress, signal });
-  ensureNotAborted(signal);
+  // Validate and bound the complete input BEFORE GPU initialization, CDN imports,
+  // or model-weight downloads. Invalid input must fail immediately and cheaply.
   const messages = buildLocalPromptMessages({
     originalPrompt,
     structuredDraft,
@@ -245,25 +278,42 @@ export async function improvePromptWithLocalModel({
     researchSummary,
     searchAttempted
   });
+  ensureNotAborted(signal);
+  const engine = await prepareModel({ onProgress, signal });
+  ensureNotAborted(signal);
   const onAbort = () => {
     try { engine.interruptGenerate?.(); } catch { /* Generation may finish while cancellation arrives. */ }
   };
   signal?.addEventListener("abort", onAbort, { once: true });
   let raw = "";
+  let finishReason = null;
   try {
     const stream = await engine.chat.completions.create({
       messages,
       temperature: 0.2,
       top_p: 0.85,
-      max_tokens: 768,
+      max_tokens: MAX_OUTPUT_TOKENS,
       stream: true
     });
     for await (const chunk of stream) {
       ensureNotAborted(signal);
-      raw += chunk?.choices?.[0]?.delta?.content ?? "";
+      const choice = chunk?.choices?.[0];
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      raw += choice?.delta?.content ?? "";
       if (typeof onChunk === "function") onChunk(sanitizeLocalAnswer(raw));
     }
     ensureNotAborted(signal);
+    if (finishReason === "length") {
+      throw new Error(
+        "Output model lokal terpotong karena batas token. Draf struktur tetap tersedia; ringkas konteks atau coba lagi."
+      );
+    }
+    if (finishReason && !["stop", "eos", "end_turn"].includes(finishReason)) {
+      throw new Error(
+        "Model lokal menghentikan generasi secara tidak normal (" + String(finishReason).slice(0, 40) +
+        "). Draf struktur tetap tersedia; coba lagi."
+      );
+    }
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
