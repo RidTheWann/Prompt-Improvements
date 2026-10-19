@@ -126,7 +126,7 @@ test("OpenRouter reasoning and web search controls are persistent, explicit, and
   assert.match(html, /id="reasoningHelp"/);
   assert.match(app, /function loadReasoningPrefs\(\)/);
   assert.match(app, /reasoningEffort,\s*webSearch,/);
-  assert.match(app, /const supported = \$\("llmProvider"\)\.value === "openrouter"/);
+  assert.match(app, /const openRouter = \$\("llmProvider"\)\.value === "openrouter"/);
 });
 
 
@@ -139,7 +139,7 @@ test("RidTheWann Core is the default browser-local answer engine", () => {
   assert.match(app, /generateLocalAssistantReply\(/);
   assert.match(app, /researchWebWithOpenRouter\(/);
   assert.match(app, /searchWikipedia\(/);
-  assert.match(app, /$("engineMode").value === "local-ai"/);
+  assert.match(app, /\$\("engineMode"\)\.value === "local-ai"/);
 });
 
 test("GitHub Pages allows the pinned browser inference runtime and WebGPU workers", () => {
