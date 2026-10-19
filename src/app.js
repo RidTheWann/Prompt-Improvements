@@ -217,7 +217,7 @@ function updateReasoningControls() {
     ? "Penyempurnaan prompt berjalan di perangkat tanpa API key. Pencarian opsional menggunakan OpenRouter jika key dan model tersedia; jika tidak, pencarian memakai Wikipedia. Kueri dapat dikirim ke layanan tersebut."
     : openRouter && externalAi
       ? "Reasoning internal tidak ditampilkan. Web search OpenRouter hanya dipakai bila relevan dan dapat menambah biaya selain token model."
-      : "Reasoning API dan web search penuh memerlukan OpenRouter. Mode lokal tetap bisa menjawab tanpa key dan memakai Wikipedia saat pencarian relevan.";
+      : "Reasoning API dan web search penuh memerlukan OpenRouter. Mode lokal tetap bisa menyempurnakan prompt tanpa key dan memakai Wikipedia saat pencarian relevan.";
 }
 
 function updateEngineLabel() {
@@ -1735,7 +1735,7 @@ async function copyPrompt() {
       area.remove();
       if (!copied) throw new Error("Clipboard unavailable");
     }
-    showToast($("engineMode").value === "local-ai" ? "Jawaban disalin ke clipboard." : "Prompt disalin ke clipboard.");
+    showToast("Prompt disalin ke clipboard.");
   } catch {
     showToast("Clipboard tidak tersedia. Pilih teks hasil lalu salin secara manual.");
   }
@@ -1848,7 +1848,7 @@ function restoreVersion(id) {
   renderWebSources([]);
   $("improvedPrompt").hidden = true;
   $("promptPreview").hidden = false;
-  $("editPromptButton").textContent = $("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt";
+  $("editPromptButton").textContent = "Edit prompt";
   $("editPromptButton").setAttribute("aria-pressed", "false");
 
   const settings = version.settings ?? {};
@@ -1940,7 +1940,7 @@ $("editPromptButton").addEventListener("click", () => {
   $("improvedPrompt").hidden = editing;
   $("promptPreview").hidden = !editing;
   $("editPromptButton").textContent = editing
-    ? ($("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt")
+    ? "Edit prompt"
     : "Selesai mengedit";
   $("editPromptButton").setAttribute("aria-pressed", String(!editing));
   if (editing) {
