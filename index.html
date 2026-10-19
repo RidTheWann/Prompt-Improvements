@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.run https://esm.sh 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; manifest-src 'self'; worker-src 'self' blob: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="theme-color" content="#101319">
-  <meta name="description" content="Perjelas instruksi untuk AI. Susun prompt secara gratis di browser dengan tata letak chat yang interaktif dan ramah pengguna.">
-  <title>Prompt Improvements — Buat prompt yang lebih jelas</title>
+  <meta name="description" content="RidTheWann Core: asisten AI berbasis model open-weight yang berjalan lokal di browser dengan WebGPU dan pencarian web opsional.">
+  <title>Prompt Improvements — RidTheWann Core</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
@@ -170,12 +170,12 @@
       <main class="chat-main" id="chatMain">
         <!-- Hero sambutan (tampil saat belum ada prompt aktif) -->
         <section class="hero chat-welcome" id="chatWelcome">
-          <div class="eyebrow"><span class="eyebrow-line"></span> BUAT INSTRUKSI LEBIH JELAS</div>
-          <h1>Biar AI lebih paham<br><span>apa yang kamu inginkan.</span></h1>
-          <p>Mulai dari satu kalimat. Kami bantu menyusunnya menjadi prompt yang lebih jelas, tanpa perlu memahami teknik prompt engineering.</p>
+          <div class="eyebrow"><span class="eyebrow-line"></span> RIDTHEWANN CORE · AI LOKAL</div>
+          <h1>Asisten AI milikmu.<br><span>Berjalan langsung di browser.</span></h1>
+          <p>Tanya, minta penjelasan, atau minta bantuan menyelesaikan tugas. Model berjalan di perangkat tanpa API key; pencarian web tersedia bila dibutuhkan.</p>
           <div class="hero-meta">
-            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Bisa dimulai gratis</span>
-            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Hasil siap disalin</span>
+            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Inferensi lokal</span>
+            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Web search opsional</span>
             <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4"/><circle cx="10" cy="10" r="3.5"/></svg> Riwayat tersimpan di browser</span>
           </div>
         </section>
@@ -431,7 +431,7 @@
         <!-- Composer Box Input Chat -->
         <div class="chat-composer-box">
           <label class="field-label composer-label sr-only" for="originalPrompt">Apa yang ingin kamu minta kepada AI? <span class="required">*</span></label>
-          <textarea id="originalPrompt" class="textarea prompt-input composer-textarea" rows="3" maxlength="60000" placeholder="Ketik ide atau tugas yang ingin kamu minta ke AI... (contoh: Bantu aku menulis email penawaran kerja)" spellcheck="true" aria-describedby="inputHint"></textarea>
+          <textarea id="originalPrompt" class="textarea prompt-input composer-textarea" rows="3" maxlength="60000" placeholder="Tanyakan sesuatu atau tulis tugas yang ingin kamu selesaikan..." spellcheck="true" aria-describedby="inputHint"></textarea>
           
           <div class="composer-bottom">
             <div class="composer-tools">
