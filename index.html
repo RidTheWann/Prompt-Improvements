@@ -94,6 +94,25 @@
                 <label class="field-label" for="llmModel">Model</label>
                 <select id="llmModel" class="text-input"><option value="">Cek koneksi untuk memuat model</option></select>
               </div>
+              <div id="reasoningControls" class="reasoning-controls">
+                <div class="field">
+                  <label class="field-label" for="reasoningEffort">Kedalaman penalaran</label>
+                  <select id="reasoningEffort" class="text-input">
+                    <option value="auto">Otomatis dari model</option>
+                    <option value="minimal">Minimal · cepat</option>
+                    <option value="low">Ringan</option>
+                    <option value="medium">Seimbang</option>
+                    <option value="high">Mendalam</option>
+                    <option value="xhigh">Sangat mendalam</option>
+                  </select>
+                </div>
+                <label class="toggle-row reasoning-search-toggle" for="webSearchEnabled">
+                  <span><strong>Izinkan pencarian web</strong><small>Model mencari dokumentasi dan fakta terbaru jika relevan.</small></span>
+                  <input id="webSearchEnabled" type="checkbox" checked>
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </label>
+                <p id="reasoningHelp" class="ai-local-note">Reasoning internal tidak ditampilkan. Pencarian web dapat menambah biaya penyedia.</p>
+              </div>
               <div class="ai-connection-row">
                 <button id="checkLlmButton" class="button button-secondary" type="button">Cek koneksi &amp; model</button>
               </div>
@@ -176,20 +195,44 @@
           </div>
 
           <!-- Bubble Pesan Asisten: Hasil Prompt & Analisis -->
-          <section class="panel output-panel chat-bubble chat-bubble-assistant" id="outputPanel" aria-label="Hasil prompt" hidden>
-            <div class="panel-heading">
-              <div class="assistant-title-group">
-                <span class="brand-mark tiny-mark" aria-hidden="true">P<span>+</span></span>
-                <div>
-                  <div class="section-kicker">PROMPT TERSTRUKTUR</div>
-                  <h2>Prompt hasil perbaikan</h2>
-                </div>
+          <section class="output-panel chat-bubble chat-bubble-assistant" id="outputPanel" aria-label="Balasan asisten" hidden>
+            <div class="assistant-message-heading">
+              <span class="brand-mark tiny-mark" aria-hidden="true">P<span>+</span></span>
+              <strong>Prompt Improvements</strong>
+              <span id="resultStatus" class="sr-only" role="status">Menunggu input</span>
+            </div>
+            <p id="assistantReplyIntro" class="assistant-reply-intro">Aku sudah merapikan instruksi dan menjaga tujuan utamamu tetap utuh. Berikut versi yang siap digunakan.</p>
+
+            <div class="result-divider"></div>
+            <div class="result-heading">
+              <div>
+                <h3>Prompt yang sudah dirapikan</h3>
+                <p>Salin langsung atau edit sebelum dipakai.</p>
               </div>
-              <span id="resultStatus" class="status-chip">Menunggu input</span>
+              <span id="resultWordCount" class="sr-only">0 kata</span>
+            </div>
+            <div id="promptPreview" class="prompt-preview" role="region" aria-label="Prompt siap disalin" tabindex="0"></div>
+            <textarea id="improvedPrompt" class="textarea result-textarea" rows="12" placeholder="Prompt hasil perbaikan akan muncul di sini." spellcheck="true" aria-label="Edit prompt hasil penyempurnaan" hidden></textarea>
+            <section id="webSources" class="web-sources" aria-label="Sumber web yang digunakan" hidden>
+              <h4>Sumber yang digunakan</h4>
+              <div id="webSourceList" class="web-source-list"></div>
+            </section>
+
+            <div class="result-actions">
+              <button id="editPromptButton" class="button button-quiet" type="button" aria-pressed="false">Edit prompt</button>
+              <button id="copyButton" class="button button-primary" type="button" disabled>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H6"/></svg>
+                Salin prompt
+              </button>
+              <button id="downloadButton" class="button button-secondary" type="button" disabled>Unduh .md</button>
+              <button id="saveButton" class="button button-secondary" type="button" disabled>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 13v3h12v-3"/></svg>
+                Simpan versi
+              </button>
+              <button id="exportJsonButton" class="button button-quiet advanced-only" type="button" aria-label="Ekspor versi sebagai JSON" disabled>JSON</button>
             </div>
 
-            <!-- Analisis Kualitas & Skor Sebelum/Sesudah -->
-            <details class="guided-details analysis-details" id="analysisDetails">
+                        <details class="guided-details analysis-details" id="analysisDetails">
               <summary class="guided-summary"><span><strong>Lihat analisis dan saran</strong><small>Indikator struktur, bukan skor kebenaran.</small></span><span class="summary-indicator" aria-hidden="true">+</span></summary>
               <div class="score-card">
                 <div class="score-topline">
@@ -223,28 +266,6 @@
               </div>
             </details>
 
-            <div class="result-divider"></div>
-            <div class="result-heading">
-              <div>
-                <h3>Prompt siap digunakan</h3>
-                <p>Salin dan tempel ke AI pilihanmu. Kamu juga bisa mengeditnya di sini.</p>
-              </div>
-              <span id="resultWordCount" class="count-chip">0 kata</span>
-            </div>
-            <textarea id="improvedPrompt" class="textarea result-textarea" rows="12" placeholder="Prompt yang siap kamu salin akan muncul di sini setelah kamu mengirimkan permintaan di bawah." spellcheck="true" aria-label="Prompt hasil penyempurnaan"></textarea>
-
-            <div class="result-actions">
-              <button id="copyButton" class="button button-primary" type="button" disabled>
-                <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H6"/></svg>
-                Salin prompt
-              </button>
-              <button id="downloadButton" class="button button-secondary" type="button" disabled>Unduh .md</button>
-              <button id="saveButton" class="button button-secondary" type="button" disabled>
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 13v3h12v-3"/></svg>
-                Simpan versi
-              </button>
-              <button id="exportJsonButton" class="button button-quiet advanced-only" type="button" aria-label="Ekspor versi sebagai JSON" disabled>JSON</button>
-            </div>
 
             <!-- Iterasi dan Revisi Percakapan -->
             <details class="guided-details iteration-details" id="iterationDetails">
