@@ -1,4 +1,8 @@
-const WEBLLM_CDN = "https://esm.run/@mlc-ai/web-llm@0.2.86";
+export const WEBLLM_CDN_URLS = Object.freeze([
+  "https://esm.run/@mlc-ai/web-llm@0.2.86",
+  "https://esm.sh/@mlc-ai/web-llm@0.2.86",
+  "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm"
+]);
 
 export const LOCAL_MODEL = Object.freeze({
   id: "Qwen3-0.6B-q4f16_1-MLC",
@@ -86,11 +90,11 @@ function awaitWithAbort(promise, signal) {
 }
 
 function localLoadError(stage, error) {
-  const raw = String(error?.message || error || "kesalahan tidak diketahui").slice(0, 240);
+  const raw = String(error?.message || error || "kesalahan tidak diketahui").slice(0, 900);
   if (error?.name === "AbortError") return error;
   if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) {
     return new Error(
-      "Gagal " + stage + " (Failed to fetch). Periksa koneksi/DNS, VPN atau pemblokir konten, lalu pastikan browser dapat mengakses esm.run dan Hugging Face. Klik “Siapkan model lokal” untuk mencoba lagi. Detail: " + raw
+      "Gagal " + stage + " (Failed to fetch). Periksa koneksi/DNS, VPN atau pemblokir konten, lalu pastikan browser dapat mengakses salah satu CDN runtime (esm.run, esm.sh, atau jsDelivr). Unduhan bobot model dilakukan dari Hugging Face. Klik “Siapkan model lokal” untuk mencoba lagi. Detail: " + raw
     );
   }
   if (/no url found for model id|model.+not found/i.test(raw)) {
@@ -99,16 +103,45 @@ function localLoadError(stage, error) {
   return new Error("Gagal " + stage + ": " + raw);
 }
 
-async function loadWebLLM() {
-  if (!webllmPromise) {
-    // A rejected dynamic-import promise must not poison subsequent retry attempts.
-    webllmPromise = import(WEBLLM_CDN).catch((error) => {
-      webllmPromise = null;
-      throw error;
-    });
-  }
-  return webllmPromise;
+/**
+ * Load WebLLM from the official esm.run endpoint, then try independent ESM
+ * delivery networks if that endpoint is unavailable or returns a broken module.
+ * Failed attempts are not cached, so the next user retry starts a fresh attempt.
+ */
+export function createWebLLMLoader(importer = (url) => import(url)) {
+  let promise = null;
+  return function loadWebLLM() {
+    if (!promise) {
+      promise = (async () => {
+        const failures = [];
+        for (const url of WEBLLM_CDN_URLS) {
+          try {
+            const runtime = await importer(url);
+            if (typeof runtime?.CreateMLCEngine !== "function") {
+              throw new Error("Modul tidak mengekspor CreateMLCEngine.");
+            }
+            return runtime;
+          } catch (error) {
+            const hostname = new URL(url).hostname;
+            const detail = String(error?.message || error || "kesalahan tidak diketahui").replace(/\s+/g, " ").slice(0, 120);
+            failures.push(hostname + ": " + detail);
+          }
+        }
+        throw new Error(
+          "Semua sumber CDN gagal memuat runtime WebLLM. Periksa koneksi, DNS, pemblokir konten, atau coba lagi. Detail: " +
+          failures.join(" | ")
+        );
+      })().catch((error) => {
+        // Do not poison future clicks with a rejected import promise.
+        promise = null;
+        throw error;
+      });
+    }
+    return promise;
+  };
 }
+
+const loadWebLLM = createWebLLMLoader();
 
 export async function prepareLocalModel({ onProgress, signal } = {}) {
   ensureNotAborted(signal);
@@ -126,7 +159,7 @@ export async function prepareLocalModel({ onProgress, signal } = {}) {
           throw new Error("Browser tidak menemukan GPU WebGPU yang bisa dipakai. Periksa driver dan akselerasi hardware.");
         }
 
-        stage = "mengunduh runtime WebLLM dari esm.run";
+        stage = "memuat runtime WebLLM dari CDN";
         onProgress?.({ text: "Memuat runtime inferensi WebLLM..." });
         const webllm = await loadWebLLM();
 

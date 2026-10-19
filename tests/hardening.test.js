@@ -12,6 +12,9 @@ test("CSP blocks inline code, plugins, and base-tag injection", () => {
   assert.ok(!csp.includes("'unsafe-inline'"), "inline JavaScript stays blocked");
   assert.ok(!csp.includes("'unsafe-eval'"), "general JavaScript eval stays blocked");
   assert.ok(csp.includes("'wasm-unsafe-eval'"), "WebAssembly compilation is permitted for the local model runtime");
+  for (const host of ["https://esm.run", "https://esm.sh", "https://cdn.jsdelivr.net"]) {
+    assert.ok(csp.includes(host), "CSP must permit the runtime CDN: " + host);
+  }
 });
 
 test("deployment waits for tests and stamps a unique service-worker cache id", () => {
