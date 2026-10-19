@@ -143,6 +143,8 @@ try {
   await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
 
   await page.locator("#composerPlusButton").click();
+  await page.locator('[data-composer-action="new"]').click();
+  await page.locator("#composerPlusButton").click();
   await page.locator('button[data-template="learn"]').click();
   assert.match(await page.locator("#originalPrompt").inputValue(), /\[topik\]/);
   await page.setViewportSize({ width: 390, height: 844 });
