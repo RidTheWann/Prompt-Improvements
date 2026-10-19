@@ -16,7 +16,7 @@ test("every static application DOM ID reference exists exactly once", () => {
 });
 
 test("beginner flow uses progressive disclosure and an obvious primary action", () => {
-  assert.match(html, /Apa yang ingin kamu minta kepada AI\?/);
+  assert.match(html, /Prompt awal yang ingin kamu sempurnakan/);
   assert.match(html, /id="contextDetails"/);
   assert.match(html, /id="engineSettings"/);
   assert.match(html, /id="analysisDetails"/);
@@ -84,7 +84,7 @@ test("privacy copy differentiates local structure mode from provider AI mode", (
   assert.match(html, /id="privacyModeNote"/);
   assert.match(app, /Mode struktur gratis menyusun prompt/);
   assert.match(app, /Mode API mengirim isi prompt dan konteks/);
-  assert.match(app, /RidTheWann Core menjawab langsung/);
+  assert.match(app, /RidTheWann Core menyempurnakan prompt/);
 });
 
 
@@ -110,7 +110,7 @@ test("streaming AI response provides a cancel button in the primary actions", ()
 });
 
 
-test("the composer clears sent text while the assistant response renders like a chat message", () => {
+test("prompt refinement renders an editable prompt artifact and source references", () => {
   assert.match(html, /id="assistantReplyIntro" class="assistant-reply-intro"/);
   assert.match(html, /id="promptPreview" class="prompt-preview"/);
   assert.match(html, /id="improvedPrompt"[^>]*hidden/);
@@ -130,13 +130,16 @@ test("OpenRouter reasoning and web search controls are persistent, explicit, and
 });
 
 
-test("RidTheWann Core is the default browser-local answer engine", () => {
+test("RidTheWann Core is the default browser-local prompt refinement engine", () => {
   assert.match(html, /<option value="local-ai" selected>RidTheWann Core/);
+  assert.match(html, /Biar AI lebih paham/);
+  assert.match(html, /Tempel prompt awal yang ingin kamu perjelas/);
   assert.match(html, /id="localModelPanel"/);
   assert.match(html, /id="loadLocalModelButton"/);
-  assert.match(html, /id="conversationArchive"/);
-  assert.match(app, /async function runLocalAssistantTurn\(originalPrompt, settings\)/);
-  assert.match(app, /generateLocalAssistantReply\(/);
+  assert.doesNotMatch(html, /id="conversationArchive"/);
+  assert.match(app, /async function runLocalPromptImprovement\(originalPrompt, settings, structuredDraft\)/);
+  assert.match(app, /improvePromptWithLocalModel\(/);
+  assert.doesNotMatch(app, /runLocalAssistantTurn|generateLocalAssistantReply/);
   assert.match(app, /researchWebWithOpenRouter\(/);
   assert.match(app, /searchWikipedia\(/);
   assert.match(app, /\$\("engineMode"\)\.value === "local-ai"/);
