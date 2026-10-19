@@ -30,7 +30,7 @@ export function sanitizeLocalAnswer(value) {
 
 function abortError(signal) {
   if (signal?.reason instanceof Error) return signal.reason;
-  const error = new Error("Pembuatan jawaban dibatalkan.");
+  const error = new Error("Penyempurnaan prompt dibatalkan.");
   error.name = "AbortError";
   return error;
 }
