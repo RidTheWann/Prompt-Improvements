@@ -1,89 +1,90 @@
 # Prompt Improvements
 
-A chat-first prompt builder with a local deterministic engine and optional AI refinement. Sent text leaves the composer and appears in the conversation; the assistant response is rendered as readable chat content with a copy-ready prompt and optional editing. Examples, context, engine settings, and history are tucked into the composer's **+** menu and a compact sidebar drawer. Advanced evaluation remains available when repeatable testing is needed.
+**RidTheWann Core** is the default, browser-local chat engine in this project. It runs an open-weight language model through WebGPU, can answer ordinary questions, maintains short-lived conversation context, and can retrieve web context when useful. No model API key is required for local inference.
+
+Prompt Improvements also retains a deterministic prompt-structuring workflow and optional external provider integrations. The UI is chat-first: submitted text leaves the composer, previous local turns remain visible for the current session, and the current reply can be copied or edited.
+
+## What "RidTheWann Core" means
+
+RidTheWann Core is the **project-owned assistant engine and orchestration layer**, not a claim that RidTheWann trained the underlying foundation-model weights from scratch. The initial inference model is **Qwen3 0.6B** with a WebLLM browser runtime. This gives the project a model that executes locally in a supported browser, rather than outsourcing every answer to an API.
+
+- **Local default.** The selected model generates answers in the visitor's browser through WebGPU.
+- **No API key for inference.** The runtime and model weights must be downloaded on first use, so first startup requires an internet connection. Subsequent availability and caching depend on the browser.
+- **Optional web search.** The app can query Wikipedia's MediaWiki search API without a key. If a user explicitly configures a valid OpenRouter model and key, the app can also ask OpenRouter's web-search tool for broader search results; this part can incur provider charges and sends the query to that provider.
+- **Privacy boundaries.** Local prompts are passed to the local model in the browser. A web-search query is sent to the selected search service. API keys are held only in page memory and aren't written to localStorage or sessionStorage.
+- **Open model limits.** A 0.6B parameter model is intentionally small and may be weaker at complex reasoning, long context, coding, and factual detail than larger hosted models. Review important answers and sources.
 
 ## Why this project exists
 
-Prompt improvement should be a repeatable engineering workflow—not a one-shot rewrite that depends on a paid model. This project starts with a deterministic prompt-structuring engine that runs in the browser, gives transparent heuristic feedback, preserves prior iterations locally, and exports prompts for use with any AI assistant.
+A useful personal AI should have a stable identity, usable chat flow, local inference, safe tool routing, and measurable behavior—not just a dropdown for a hosted model. RidTheWann Core begins with a small open-weight model and a controlled browser runtime, while keeping prompt structuring, external models, and regression evaluation available as interchangeable capabilities.
 
 ## Current MVP
 
-- **Free by default.** Deterministic mode runs in the browser; optional AI refinement uses your own API key.
-- **Structured refinement.** Keep the original request while adding optional objective, context, audience, constraints, output format, and success criteria.
-- **Reasoning controls.** OpenRouter models that support reasoning can be configured from automatic through extra-high effort. Private chain-of-thought is never shown in the UI.
-- **Web-grounded refinement.** With OpenRouter selected, the model can use the server-side web-search tool when current documentation, versions, or changing facts materially improve a prompt. Returned source citations appear as separate links.
-- **Chat-native output.** The composer clears when a request is sent. The submitted message stays in the conversation, with explicit edit/copy actions for the assistant's result.
-- **Transparent quality checks.** Heuristic signals highlight missing prompt structure. They are guidance, not a measure of factual correctness or guaranteed model performance.
-- **Iterative versions.** Save prompt versions in browser storage, review previous drafts, and restore them.
-- **Portable output.** Copy or download a prompt as Markdown or JSON.
-- **Privacy by default.** Prompt versions and reasoning preferences remain in browser local storage. AI mode sends prompt text and supplied context to the selected provider. API keys remain in page memory and are never persisted. With web search enabled, relevant context can also be processed by OpenRouter's server-side search tool; additional usage charges may apply.
+- **Browser-local assistant.** RidTheWann Core runs Qwen3 0.6B through WebLLM with WebGPU and answers the user's underlying request directly.
+- **Open model + project identity.** The system instructions, chat orchestration, source handling, and UI belong to this repository; the base model weights remain upstream open-weight assets.
+- **Web retrieval.** Search-relevant questions can retrieve Wikipedia snippets and links. With OpenRouter configured, a separate web-search request may provide broader results before the local model writes the answer.
+- **Conversation continuity.** A bounded in-memory conversation window supports follow-up messages. Starting a new workspace clears the current chat context.
+- **Deterministic prompt builder.** Switch to **Struktur lokal** to generate a structured prompt without running a language model.
+- **Optional external model.** Use **AI via API key** for hosted-model output or prompt refinement; each provider has its own quota, privacy, CORS, and cost implications.
+- **Evaluation and iteration.** Advanced tests compare original and revised prompts against user-defined checks. Heuristic scores are structural guidance, not measures of truth.
+- **Portable output.** Copy the current answer or prompt, download Markdown, save versions, or export a validated workspace backup.
+- **No-server deployment.** The GitHub Pages app is static; model inference is performed in the visitor's browser. No API key or server secret is embedded in the repository.
 
 ## Run locally
 
-Use any static HTTP server from the repository root. For example, with Python installed:
+Use any static HTTP server from the repository root. For example, with Python:
 
 ```bash
 python -m http.server 8080
 ```
 
-Then open [http://localhost:8080](http://localhost:8080).
+Then open [http://localhost:8080](http://localhost:8080). Model inference requires a browser with WebGPU support. First-time runtime and model downloads need an internet connection; the deterministic builder remains available even without a compatible GPU.
 
-You can also deploy the static site to GitHub Pages. No build step or dependency installation is required for the app itself.
+## Test the project
 
-## Test the prompt engine
-
-The project uses Node.js built-in test runner and has no runtime dependencies:
+The project uses Node.js's built-in test runner:
 
 ```bash
 npm test
 ```
 
-## Prompt engine behavior
+The tests validate local prompt assembly, web-search sanitization, backup validation, API routing, and UI contracts. They do not download the full model or prove inference quality; browser smoke tests keep their normal flow in deterministic mode.
 
-The deterministic engine classifies common task intents and adapts the structure instead of forcing one template onto every request. Simple tasks stay concise; complex tasks can receive tailored steps, success criteria, source-data boundaries, and conflict warnings. Scores are heuristic indicators only, not measures of factual accuracy or model quality. The engine treats missing optional details as optional and reserves clarification questions for information that would materially change the result.
+## Local-model behavior
 
-The optional AI engine uses a provider-aware adapter, bounded retry for rate limits, paginated model discovery where supported, credential-scrubbed diagnostics, response-truncation detection, OpenRouter reasoning controls, and cited web-search metadata. Browser-to-provider requests depend on each provider's key, quota, CORS behavior, and supported model features. To enable reasoning and web search, open the **+** menu → **Pengaturan engine**, select **AI via API key** and **OpenRouter**, enter a key, then choose reasoning effort and web search. Avoid shared-device credentials and sensitive data.
+The browser runtime is initialized on demand from a pinned WebLLM release and loads the `Qwen3-0.6B-q4f16_1-MLC` model. The model stays on the client and generates token streams in the browser. If WebGPU is unavailable, model download fails, or the browser runs out of memory, the app reports an error and the deterministic or external API modes remain available.
 
-## Rujukan desain dan keamanan
+Web search uses a simple relevance gate to avoid searching for every message. The no-key path uses Wikipedia's public MediaWiki API and displays source links separately from the answer. If OpenRouter credentials/model are configured, its server-side search tool can be used for broader retrieval; that request is independent from the local inference pass. The app does not claim an answer is verified merely because a search was attempted.
+
+# Rujukan desain dan keamanan
 
 - [OpenAI — Prompt engineering](https://developers.openai.com/api/docs/guides/prompt-engineering): instruksi eksplisit, format keluaran, delimiter, serta evaluasi iteratif.
 - [Anthropic — Prompt templates and variables](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/prompt-templates-and-variables): batas konteks dan instruksi yang konsisten melalui tag yang jelas.
 - [Google Gemini — Prompt design strategies](https://ai.google.dev/gemini-api/docs/prompting-strategies): instruksi langsung, delimiter konsisten, dan parameter keluaran yang eksplisit.
 - [OWASP — HTML5 Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html): jangan menganggap browser storage sebagai tempat aman untuk kredensial.
 
-## What "continuous improvement" means here
+## Continuous improvement
 
-1. Start with one sentence or choose a starter example.
-2. Generate a prompt; adding extra details is optional.
-3. Review the result and copy it into your preferred AI assistant.
-4. Add context or feedback only when the first result needs refinement.
-5. Use advanced evaluation and saved versions when repeatable comparison matters.
+The local AI path answers the underlying request directly; it doesn't automatically rewrite every message as a prompt. Switch to **Struktur lokal** when you specifically want a prompt artifact, add task context when it materially helps, and use the advanced evaluation tools when repeatable comparisons matter.
 
-The deterministic engine does not infer missing domain knowledge or guarantee better answers. AI mode adds semantic rewriting with a model you connect via API key, but its output still needs review and evaluation against representative test cases.
+The local model and retrieval routing are starting points—not guarantees of strong reasoning. Use source links to verify current facts and build representative test cases before judging model changes. Larger local models, task-specific fine-tuning, and a model trained with the project's own weights are future research, not part of this initial browser deployment.
 
-## Koneksi AI dengan API key
+## Optional API and broader web search
 
-Mode **AI via API key** meminta model menulis ulang prompt-mu dengan meta-prompt rekayasa prompt (peran, delimiter data, aturan positif, format, kriteria, pemeriksaan mandiri) dan tetap menjaga fakta tidak dikarang.
+The external-provider mode remains available when a larger hosted model is preferable, or when you want broader OpenRouter web search before the local model drafts its answer.
 
-1. Pilih **Mode engine → AI via API key** dan penyedia: OpenRouter (ratusan model, termasuk GPT), Anthropic, Google Gemini, atau endpoint kustom kompatibel OpenAI (wajib HTTPS; HTTP hanya untuk localhost).
-2. Tempel API key lalu klik **Cek koneksi & model**; daftar model diambil langsung dari penyedia sehingga tidak ada nama model usang.
-3. Klik **Sempurnakan dengan AI**.
+1. Open the **+** menu → **Pengaturan engine**, choose **AI via API key**, select OpenRouter (or another supported provider), and enter your API key.
+2. Click **Cek koneksi & model** and select a model returned by the provider.
+3. In **RidTheWann Core** mode, a configured OpenRouter key can be used only for the optional web-research step. In **AI via API key** mode, the hosted model itself generates the output.
 
-Keamanan: request dikirim langsung dari browser ke penyedia (tanpa server perantara). API key hanya ada di memori halaman yang aktif; key tidak disimpan ke localStorage/sessionStorage dan tidak masuk ke backup atau ekspor. Setelah halaman dimuat ulang, masukkan key kembali. Skrip atau ekstensi yang berjalan di halaman tetap berpotensi mengakses key selama digunakan, jadi pakai key dengan batas pengeluaran dan hindari perangkat bersama.
-
-Saat AI sedang streaming, mengedit prompt/pengaturan, memilih template, memulai workspace baru, atau memulihkan versi tersimpan membatalkan operasi aktif agar respons lama tidak menimpa input yang lebih baru. Tombol batal biasa tetap mempertahankan teks parsial yang sudah diterima untuk ditinjau. OpenAI langsung dari browser dapat diblokir CORS; gunakan penyedia yang mendukung akses browser atau endpoint kustom yang tepercaya. Jika koneksi gagal, mode struktur tetap bisa dipakai.
+Keys exist only in the active page's memory and are not included in backups or exported files. They are removed when the page reloads. Use provider spending limits, avoid shared devices, and don't send sensitive data to any external search/provider.
 
 ## Deploy to GitHub Pages
 
-The repository includes a static deployment workflow. One-time setup is required because GitHub does not expose the Pages publishing source through this chat integration:
+The repository deploys as a static frontend. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions** if this repository hasn't been configured yet. After a successful workflow run, the public app URL is https://ridthewann.github.io/Prompt-Improvements/.
 
-1. Open **Settings → Pages** in this repository.
-2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. The workflow will publish the static app after pushes to `main`; you can also run it manually from the Actions tab.
+GitHub Pages does not host a private inference API or train model weights. Inference occurs in the visitor's supported browser. WebLLM runtime/model files are fetched from their configured public asset hosts on first load, and Wikipedia/OpenRouter search requests go directly from the browser to those services when invoked.
 
-Once the first deployment succeeds, the public app URL will be https://ridthewann.github.io/Prompt-Improvements/.
-
-The deployment contains only the app's static frontend files. API keys never reach the deployment; AI calls go from the visitor's browser straight to the chosen provider.
 ## Guarded automatic prompt optimization
 
 The **Optimasi iteratif otomatis** panel runs a bounded local search against the test cases you've written. It caches baseline outputs once per run, asks the local model to revise the best prompt using failed-check feedback, evaluates each proposal against the same baseline and criteria, and accepts it only when its rank improves. Ranking prioritizes fewer regressions, then more fully passing cases, then a higher average criteria score, then a shorter prompt. Acceptance criteria themselves are never altered.
