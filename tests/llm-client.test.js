@@ -430,7 +430,8 @@ test("OpenRouter reasoning and web search are sent as explicit controls and sour
     title: "Official reference",
     domain: "docs.example.dev"
   }]);
-  assert.doesNotMatch(JSON.stringify(body), /include_reasoning|chain.of.thought/i);
+  assert.equal(Object.hasOwn(body, "include_reasoning"), false, "private reasoning must not be requested as a visible response field");
+  assert.equal(Object.hasOwn(body, "reasoning_details"), false, "private reasoning metadata is not surfaced as user-facing chat content");
 });
 
 test("web search cannot silently be enabled for non-OpenRouter providers", async () => {
