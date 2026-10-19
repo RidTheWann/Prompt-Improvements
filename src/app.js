@@ -386,6 +386,7 @@ async function runSelectedEngine({ reuseActivePrompt = false } = {}) {
       webSearch,
       signal: controller.signal,
       onSources: (sources) => {
+        if (operationId !== activeAiOperationId || controller.signal.aborted) return;
         const seen = new Set();
         activeWebSources = [...activeWebSources, ...sources].filter((source) => {
           if (!source?.url || seen.has(source.url)) return false;
