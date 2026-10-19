@@ -27,6 +27,7 @@ let activeOptimizationController = null;
 let activeAiController = null;
 let activeAiOperationId = 0;
 let activeAiInvalidationNotified = false;
+let activeGeneration = false;
 
 const fields = [
   "originalPrompt",
@@ -230,6 +231,10 @@ function invalidateActiveAiOperation(reason, notify = false) {
     const message = "Respons AI dihentikan karena " + reason + ".";
     $("resultStatus").textContent = "AI dibatalkan · " + reason;
     setLlmStatus(message, "neutral");
+    if (!$("assistantThinking").hidden) {
+      $("assistantThinking").classList.add("is-cancelled");
+      $("thinkingMessage").textContent = message;
+    }
     showToast(message);
   } else if (!notify) {
     activeAiInvalidationNotified = true;
@@ -245,7 +250,7 @@ function cancelAiImprovement() {
 }
 
 async function runSelectedEngine() {
-  if (activeAiController) return;
+  if (activeGeneration || activeAiController) return;
 
   const originalPrompt = currentOriginal();
   if (!originalPrompt) {
@@ -261,36 +266,55 @@ async function runSelectedEngine() {
     return;
   }
 
-  if ($("engineMode").value !== "ai") {
-    $("improvedPrompt").value = deterministicDraft;
-    const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: deterministicDraft });
-    renderAnalysis(analysis);
-    updateWordCounts();
-    $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
-    showToast(iterationNotes.length
-      ? "Iterasi struktur diperbarui. Prompt awal dan seluruh catatan tetap dipertahankan."
-      : "Prompt berhasil dibuat. Tinjau sebentar, lalu salin ke AI pilihanmu.");
-    revealOutputPanel();
-    return;
-  }
-
   const previousOutput = $("improvedPrompt").value.trim();
   const draftToImprove = iterationNotes.length > 0 && previousOutput ? previousOutput : deterministicDraft;
   const button = $("improveButton");
   const cancelButton = $("cancelImproveButton");
   const previousButtonLabel = $("improveButtonText").textContent;
-  let timeoutId;
-  let controller = null;
-  let operationId = null;
+  activeGeneration = true;
   button.disabled = true;
+
+  if ($("engineMode").value !== "ai") {
+    beginAssistantTurn(originalPrompt, "Mesin sedang menghasilkan prompt...");
+    $("improveButtonText").textContent = "Menyusun...";
+    try {
+      // Give the browser one paint so the chat-native progress state is visible
+      // even though deterministic prompt structuring is usually very fast.
+      await new Promise((resolve) => window.setTimeout(resolve, 320));
+      $("improvedPrompt").value = deterministicDraft;
+      const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: deterministicDraft });
+      renderAnalysis(analysis);
+      updateWordCounts();
+      $("resultStatus").textContent = iterationNotes.length ? "Iterasi " + iterationNotes.length : "Prompt disusun";
+      revealOutputPanel();
+      showToast(iterationNotes.length
+        ? "Iterasi struktur diperbarui. Prompt awal dan seluruh catatan tetap dipertahankan."
+        : "Prompt berhasil dibuat. Tinjau sebentar, lalu salin ke AI pilihanmu.");
+    } catch (error) {
+      $("improvedPrompt").value = deterministicDraft;
+      updateWordCounts();
+      $("resultStatus").textContent = "Draf struktur tersedia";
+      revealOutputPanel();
+      showToast(error instanceof Error ? error.message : "Prompt berhasil disusun dalam mode struktur.");
+    } finally {
+      button.disabled = false;
+      $("improveButtonText").textContent = previousButtonLabel;
+      activeGeneration = false;
+    }
+    return;
+  }
+
+  beginAssistantTurn(originalPrompt, "Menghubungi model AI...");
   cancelButton.hidden = false;
   cancelButton.disabled = false;
   $("improveButtonText").textContent = "AI sedang bekerja...";
   $("resultStatus").textContent = "Mengirim prompt ke model...";
   setLlmStatus("Mengirim prompt ke penyedia AI yang dipilih. Waktu respons bergantung pada model dan koneksi.");
-  $("improvedPrompt").value = "";
-  updateWordCounts();
 
+  let timeoutId;
+  let streamedOutput = "";
+  let controller = null;
+  let operationId = null;
   try {
     const baseUrl = endpointValue();
     const model = $("llmModel").value.trim();
@@ -319,10 +343,11 @@ async function runSelectedEngine() {
       signal: controller.signal,
       onChunk: (_chunk, accumulated) => {
         if (operationId !== activeAiOperationId || controller.signal.aborted) return;
-        $("improvedPrompt").value = accumulated;
-        $("resultStatus").textContent = "Menerima respons AI...";
-        updateWordCounts();
-        revealOutputPanel();
+        // Keep the final prompt hidden until the model finishes. Retain partial
+        // output only as a recovery draft if the request fails or is cancelled.
+        streamedOutput = accumulated;
+        $("thinkingMessage").textContent = "AI sedang menghasilkan dan merapikan prompt...";
+        $("resultStatus").textContent = "AI sedang menghasilkan...";
       }
     });
     if (operationId !== activeAiOperationId) return;
@@ -332,38 +357,36 @@ async function runSelectedEngine() {
     renderAnalysis(analysis);
     updateWordCounts();
     setLlmStatus("Selesai · prompt diproses oleh penyedia AI yang dipilih.", "success");
-    showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
     revealOutputPanel();
+    showToast("Prompt disempurnakan dengan AI. Periksa hasilnya sebelum digunakan.");
   } catch (error) {
     if (operationId !== null && operationId !== activeAiOperationId) return;
     const isTimeout = error?.name === "TimeoutError" || controller?.signal?.reason?.name === "TimeoutError";
-    const isAbort = (error?.name === "AbortError" || activeAiController?.signal?.aborted) && !isTimeout;
+    const isAbort = (error?.name === "AbortError" || controller?.signal?.aborted) && !isTimeout;
+    const message = isTimeout
+      ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
+      : error instanceof Error ? error.message : "AI gagal menyempurnakan prompt.";
 
     if (isAbort) {
-      $("resultStatus").textContent = "AI dibatalkan";
-      setLlmStatus("Pembuatan prompt dengan AI dibatalkan.", "neutral");
-      showToast("Pembuatan prompt dengan AI dibatalkan.");
+      $("resultStatus").textContent = "AI dibatalkan · draf tersedia";
+      setLlmStatus("Pembuatan prompt dengan AI dibatalkan; draf struktur tetap tersedia.", "neutral");
+      showToast("AI dibatalkan. Draf struktur tetap tersedia untuk disalin.");
     } else {
-      $("resultStatus").textContent = "AI gagal";
-      const message = isTimeout
-        ? "Permintaan dihentikan setelah 4 menit. Coba model yang lebih kecil atau prompt yang lebih ringkas."
-        : error instanceof Error ? error.message : "AI gagal menyempurnakan prompt.";
+      $("resultStatus").textContent = isTimeout ? "Waktu AI habis · draf tersedia" : "AI gagal · draf tersedia";
       setLlmStatus(message, "error");
-      showToast(message);
+      showToast(message + " Draf struktur tetap tersedia.");
     }
 
-    const currentOutput = $("improvedPrompt").value.trim();
-    if (!currentOutput) {
-      $("improvedPrompt").value = draftToImprove;
-      updateWordCounts();
-    } else {
-      const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: currentOutput });
-      renderAnalysis(analysis);
-      updateWordCounts();
-    }
+    // A complete or partial local/model draft remains available instead of a blank panel.
+    $("improvedPrompt").value = streamedOutput.trim() || draftToImprove;
+    const analysis = analyzePrompt(originalPrompt, { ...settings, improvedPrompt: $("improvedPrompt").value });
+    renderAnalysis(analysis);
+    updateWordCounts();
+    revealOutputPanel();
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
     if (activeAiController === controller) activeAiController = null;
+    activeGeneration = false;
     button.disabled = false;
     $("improveButtonText").textContent = previousButtonLabel;
     cancelButton.hidden = true;
@@ -1167,9 +1190,32 @@ function showToast(message) {
   toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 3100);
 }
 
+function beginAssistantTurn(originalPrompt, message) {
+  $("assistantThinking").classList.remove("is-cancelled");
+  const bubble = $("chatUserBubble");
+  const bubbleText = $("chatUserPromptText");
+  if (bubble && bubbleText) {
+    bubbleText.textContent = originalPrompt;
+    bubble.hidden = false;
+  }
+  $("chatWelcome").classList.add("has-conversation");
+  $("outputPanel").hidden = true;
+  $("outputPanel").classList.remove("has-result");
+  $("improvedPrompt").value = "";
+  $("assistantThinking").hidden = false;
+  $("thinkingMessage").textContent = message;
+  $("resultStatus").textContent = "Sedang diproses";
+  updateWordCounts();
+  window.requestAnimationFrame(() => {
+    $("assistantThinking").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+}
+
 function revealOutputPanel() {
   const panel = $("outputPanel");
+  panel.hidden = false;
   panel.classList.add("has-result");
+  $("assistantThinking").hidden = true;
   const welcome = $("chatWelcome");
   if (welcome) welcome.classList.add("has-conversation");
   const bubble = $("chatUserBubble");
@@ -1284,6 +1330,8 @@ function analyzeCurrentPrompt() {
   const improvedPrompt = $("improvedPrompt").value.trim();
   const analysis = analyzePrompt(original, { ...readSettings(), improvedPrompt });
   renderAnalysis(analysis);
+  $("analysisDetails").open = true;
+  revealOutputPanel();
   return analysis;
 }
 
@@ -1302,6 +1350,7 @@ function buildCurrentPrompt() {
     renderAnalysis(analysis);
     updateWordCounts();
     $("resultStatus").textContent = "Prompt disusun";
+    revealOutputPanel();
     return prompt;
   } catch (error) {
     showToast(error instanceof Error ? error.message : "Prompt tidak dapat disusun.");
@@ -1504,6 +1553,7 @@ function restoreVersion(id) {
   renderAnalysis(version.analysis ?? analyzePrompt(version.originalPrompt, settings));
   updateWordCounts();
   $("resultStatus").textContent = "Versi dipulihkan";
+  revealOutputPanel();
   $("originalPrompt").focus();
   showToast("Versi berhasil dipulihkan. Kamu bisa lanjut mengiterasikannya.");
   $("originalPrompt").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1520,6 +1570,12 @@ function clearWorkspace() {
   $("improvedPrompt").value = "";
   iterationNotes = [];
   lastAnalysis = null;
+  $("outputPanel").hidden = true;
+  $("assistantThinking").hidden = true;
+  $("contextDetails").open = false;
+  $("contextDetails").hidden = true;
+  toggleComposerMenu(false);
+  toggleSidebar(false);
   $("scoreBeforeValue").textContent = "—";
   $("scoreValue").textContent = "—";
   $("scoreBar").style.width = "0%";
@@ -1657,7 +1713,7 @@ function renderTemplates() {
     chip.type = "button";
     chip.className = "template-chip";
     chip.dataset.template = item.id;
-    chip.textContent = item.icon + " " + item.label;
+    chip.textContent = item.label;
     list.append(chip);
   }
 }
@@ -1670,7 +1726,19 @@ function toggleSidebar(force) {
   const open = typeof force === "boolean" ? force : !sidebar.classList.contains("open");
   sidebar.classList.toggle("open", open);
   backdrop.classList.toggle("open", open);
+  sidebar.inert = !open;
+  sidebar.setAttribute("aria-hidden", String(!open));
+  backdrop.setAttribute("aria-hidden", String(!open));
   toggleBtn.setAttribute("aria-expanded", String(open));
+}
+
+function toggleComposerMenu(force) {
+  const menu = $("composerMenu");
+  const button = $("composerPlusButton");
+  if (!menu || !button) return;
+  const open = typeof force === "boolean" ? force : menu.hidden;
+  menu.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
 }
 
 function applyTemplate(id) {
@@ -1678,13 +1746,14 @@ function applyTemplate(id) {
   if (!template) return;
   const hasWork = currentOriginal() || $("improvedPrompt").value.trim();
   if (hasWork && !window.confirm("Ganti isi editor dengan contoh \"" + template.label + "\"? Riwayat tersimpan tidak terhapus.")) return;
-  invalidateActiveAiOperation("Template diganti");
+  invalidateActiveAiOperation("Template diganti", true);
   for (const key of fields) {
     $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
   }
   $("improvedPrompt").value = "";
   iterationNotes = [];
   updateWordCounts();
+  toggleComposerMenu(false);
   toggleSidebar(false);
   $("originalPrompt").focus();
   showToast("Contoh dimuat. Ganti bagian [dalam kurung] dengan kebutuhanmu.");
@@ -1702,13 +1771,60 @@ function setAdvancedMode(enabled, persist = true) {
 
 $("sidebarToggle").addEventListener("click", () => toggleSidebar());
 $("sidebarBackdrop").addEventListener("click", () => toggleSidebar(false));
+$("composerPlusButton").addEventListener("click", () => toggleComposerMenu());
+$("contextDetails").addEventListener("toggle", () => {
+  // Keep the composer compact again after optional details are collapsed.
+  if (!$("contextDetails").open) $("contextDetails").hidden = true;
+});
+$("composerMenu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-composer-action]");
+  if (!button) return;
+  const action = button.dataset.composerAction;
+  toggleComposerMenu(false);
+
+  if (action === "new") {
+    clearWorkspace();
+    return;
+  }
+  if (action === "context") {
+    $("contextDetails").hidden = false;
+    $("contextDetails").open = true;
+    $("objective").focus();
+    return;
+  }
+  if (action === "engine") {
+    toggleSidebar(true);
+    $("engineSettings").open = true;
+    $("engineSettings").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  if (action === "history") {
+    toggleSidebar(true);
+    $("historyList").closest(".sidebar-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (action === "advanced") {
+    setAdvancedMode($("advancedToggle").getAttribute("aria-pressed") !== "true");
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".composer-tools")) toggleComposerMenu(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  toggleComposerMenu(false);
+  if ($("chatSidebar").classList.contains("open")) toggleSidebar(false);
+});
 $("templateList").addEventListener("click", (event) => {
   const chip = event.target.closest("button[data-template]");
   if (chip) applyTemplate(chip.dataset.template);
 });
 $("advancedToggle").addEventListener("click", () => setAdvancedMode($("advancedToggle").getAttribute("aria-pressed") !== "true"));
 $("originalPrompt").addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); runSelectedEngine(); }
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    runSelectedEngine();
+  }
 });
 
 updateWordCounts();

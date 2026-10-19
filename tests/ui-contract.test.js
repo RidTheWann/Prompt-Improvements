@@ -27,6 +27,38 @@ test("beginner flow uses progressive disclosure and an obvious primary action", 
   }
 });
 
+test("chat-first flow hides the result until generation finishes", () => {
+  assert.match(html, /id="assistantThinking"[^>]*role="status"[^>]*hidden/);
+  assert.match(html, /id="thinkingMessage"/);
+  assert.match(html, /id="outputPanel"[^>]*hidden/);
+  assert.match(app, /function beginAssistantTurn\(originalPrompt, message\)/);
+  assert.match(app, /function revealOutputPanel\(\)/);
+  assert.match(app, /\$\("assistantThinking"\)\.hidden = true/);
+});
+
+test("optional tools and examples live in the composer plus menu without template emojis", () => {
+  assert.match(html, /id="composerPlusButton"[^>]*aria-controls="composerMenu"/);
+  assert.match(html, /id="composerMenu"[^>]*hidden/);
+  assert.match(html, /data-composer-action="engine"/);
+  assert.match(html, /data-composer-action="history"/);
+  assert.match(app, /chip\.textContent = item\.label;/);
+  assert.doesNotMatch(app, /chip\.textContent = item\.icon \+/);
+  assert.match(app, /function toggleComposerMenu\(force\)/);
+});
+
+test("the desktop sidebar starts as an off-canvas drawer rather than taking chat width", async () => {
+  const css = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.chat-sidebar \{[\s\S]*?position: fixed;[\s\S]*?transform: translateX\(-105%\)/);
+  assert.match(app, /sidebar\.inert = !open/);
+});
+
+test("AI stream cancellation prevents stale results from replacing newer workspace state", () => {
+  assert.match(app, /function invalidateActiveAiOperation\(reason, notify = false\)/);
+  assert.match(app, /operationId !== activeAiOperationId/);
+  assert.match(app, /invalidateActiveAiOperation\("Workspace baru dibuka"\)/);
+  assert.match(app, /invalidateActiveAiOperation\("Versi riwayat dipulihkan"\)/);
+});
+
 test("score card provides before and after comparison indicators for user content", () => {
   assert.match(html, /id="scoreBeforeValue"/);
   assert.match(html, /id="scoreValue"/);
