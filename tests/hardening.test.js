@@ -9,9 +9,9 @@ const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf
 test("CSP blocks inline code, plugins, and base-tag injection", () => {
   const csp = read("index.html").match(/Content-Security-Policy" content="([^"]+)"/)?.[1] ?? "";
   for (const directive of ["default-src 'self'", "script-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'"]) assert.ok(csp.includes(directive), directive);
-  assert.ok(!/\\bunsafe-inline\\b/.test(csp));
-  assert.ok(!/(^|[\\s;'])unsafe-eval\\b/.test(csp));
-  assert.match(csp, /wasm-unsafe-eval/, "WebAssembly compilation is allowed without enabling JavaScript eval");
+  assert.ok(!csp.includes("'unsafe-inline'"), "inline JavaScript stays blocked");
+  assert.ok(!csp.includes("'unsafe-eval'"), "general JavaScript eval stays blocked");
+  assert.ok(csp.includes("'wasm-unsafe-eval'"), "WebAssembly compilation is permitted for the local model runtime");
 });
 
 test("deployment waits for tests and stamps a unique service-worker cache id", () => {
