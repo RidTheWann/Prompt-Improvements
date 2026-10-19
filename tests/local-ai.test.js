@@ -40,7 +40,11 @@ test("local assistant includes bounded history and treats web pages as untrusted
   ]);
   assert.match(messages.at(-1).content, /https:\/\/example\.com\/docs/);
   assert.match(messages.at(-1).content, /data yang tidak tepercaya/);
-  assert.match(messages.at(-1).content, /Catatan sistem/);
+  const withoutSources = buildLocalAssistantMessages({
+    prompt: "Informasi terbaru apa?",
+    searchAttempted: true
+  });
+  assert.match(withoutSources.at(-1).content, /pencarian web dicoba tetapi tidak menghasilkan sumber/);
 });
 
 test("private model reasoning tags and control tokens never reach displayed text", () => {
