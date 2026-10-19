@@ -94,7 +94,7 @@ function localLoadError(stage, error) {
   if (error?.name === "AbortError") return error;
   if (/failed to fetch|networkerror|load failed|fetch failed/i.test(raw)) {
     return new Error(
-      "Gagal " + stage + " (Failed to fetch). Periksa koneksi/DNS, VPN atau pemblokir konten, lalu pastikan browser dapat mengakses esm.run dan Hugging Face. Klik “Siapkan model lokal” untuk mencoba lagi. Detail: " + raw
+      "Gagal " + stage + " (Failed to fetch). Periksa koneksi/DNS, VPN atau pemblokir konten, lalu pastikan browser dapat mengakses salah satu CDN runtime (esm.run, esm.sh, atau jsDelivr). Unduhan bobot model dilakukan dari Hugging Face. Klik “Siapkan model lokal” untuk mencoba lagi. Detail: " + raw
     );
   }
   if (/no url found for model id|model.+not found/i.test(raw)) {
@@ -123,7 +123,7 @@ export function createWebLLMLoader(importer = (url) => import(url)) {
             return runtime;
           } catch (error) {
             const hostname = new URL(url).hostname;
-            const detail = String(error?.message || error || "kesalahan tidak diketahui").replace(/\\s+/g, " ").slice(0, 120);
+            const detail = String(error?.message || error || "kesalahan tidak diketahui").replace(/\s+/g, " ").slice(0, 120);
             failures.push(hostname + ": " + detail);
           }
         }
