@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.run https://esm.sh 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; manifest-src 'self'; worker-src 'self' blob: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="theme-color" content="#101319">
-  <meta name="description" content="RidTheWann Core: asisten AI berbasis model open-weight yang berjalan lokal di browser dengan WebGPU dan pencarian web opsional.">
+  <meta name="description" content="Prompt Improvements membantu menyempurnakan instruksi untuk model AI, mempertahankan maksud asli dan menyediakan analisis prompt serta riwayat revisi.">
   <title>Prompt Improvements — RidTheWann Core</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -24,7 +24,7 @@
           <span class="brand-mark" aria-hidden="true">P<span>+</span></span>
           <span class="brand-copy">
             <strong>Prompt Improvements</strong>
-            <small>Asisten penyusun prompt</small>
+            <small>Workbench penyempurnaan prompt</small>
           </span>
         </a>
         <button id="resetButton" class="button button-new-chat" type="button" title="Mulai sesi baru">
@@ -68,7 +68,7 @@
 
             <div class="ai-local-panel">
               <div class="ai-panel-heading">
-                <div><h3>Engine AI</h3><p>RidTheWann Core adalah pilihan utama: model open-weight dijalankan lokal di browser. Mode struktur dan API tersedia sebagai alternatif.</p></div>
+                <div><h3>Engine penyempurnaan</h3><p>RidTheWann Core memakai model open-weight lokal untuk memperbaiki prompt, bukan menjawab isi prompt. Mode struktur dan API tersedia sebagai alternatif.</p></div>
                 <span class="local-ai-tag"><span class="status-dot"></span> Local-first</span>
               </div>
               <div class="field-row ai-config-row">
@@ -86,8 +86,8 @@
                   <strong>RidTheWann Core · Qwen3 0.6B</strong>
                   <span class="local-model-badge">Inferensi lokal</span>
                 </div>
-                <p>Jawaban dibuat di perangkat tanpa API key. Unduhan model pertama kali perlu koneksi internet dan browser WebGPU yang kompatibel.</p>
-                <p id="localModelStatus" class="ai-local-note" role="status" aria-live="polite">Model belum dimuat. Model akan diunduh saat kamu mengirim pesan pertama.</p>
+                <p>Prompt disempurnakan di perangkat tanpa API key. Unduhan model pertama kali perlu koneksi internet dan browser WebGPU yang kompatibel.</p>
+                <p id="localModelStatus" class="ai-local-note" role="status" aria-live="polite">Model belum dimuat. Siapkan model lokal untuk penyempurnaan berbasis AI.</p>
                 <button id="loadLocalModelButton" class="button button-secondary" type="button">Siapkan model lokal</button>
               </div>
               <div id="llmEndpointField" class="field" hidden>
@@ -170,20 +170,19 @@
       <main class="chat-main" id="chatMain">
         <!-- Hero sambutan (tampil saat belum ada prompt aktif) -->
         <section class="hero chat-welcome" id="chatWelcome">
-          <div class="eyebrow"><span class="eyebrow-line"></span> RIDTHEWANN CORE · AI LOKAL</div>
-          <h1>Asisten AI milikmu.<br><span>Berjalan langsung di browser.</span></h1>
-          <p>Tanya, minta penjelasan, atau minta bantuan menyelesaikan tugas. Model berjalan di perangkat tanpa API key; pencarian web tersedia bila dibutuhkan.</p>
+          <div class="eyebrow"><span class="eyebrow-line"></span> BUAT INSTRUKSI LEBIH JELAS</div>
+          <h1>Biar AI lebih paham<br><span>apa yang kamu inginkan.</span></h1>
+          <p>Mulai dari satu kalimat. Prompt Improvements menyusunnya menjadi prompt yang lebih jelas, spesifik, dan siap digunakan tanpa mengerjakan tugas aslinya.</p>
           <div class="hero-meta">
-            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Inferensi lokal</span>
-            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Web search opsional</span>
+            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.8-2.5 6.4-6 7.9-3.5-1.5-6-4.1-6-7.9V5l6-2.5Z"/><path d="m7.2 9.8 1.8 1.8 3.8-4"/></svg> Maksud asli tetap dijaga</span>
+            <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h9"/><circle cx="15.5" cy="14.5" r="2"/></svg> Prompt siap disalin</span>
             <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v4M10 13v4M3 10h4M13 10h4"/><circle cx="10" cy="10" r="3.5"/></svg> Riwayat tersimpan di browser</span>
           </div>
         </section>
 
         <!-- Timeline Percakapan Chat -->
         <div class="chat-feed" id="chatFeed">
-          <div id="conversationArchive" class="conversation-archive" hidden aria-live="polite"></div>
-          <!-- Bubble Pesan Pengguna -->
+                    <!-- Bubble Pesan Pengguna -->
           <div class="chat-bubble chat-bubble-user" id="chatUserBubble" hidden>
             <div class="bubble-header">
               <span class="bubble-sender">
@@ -205,7 +204,7 @@
           </div>
 
           <!-- Bubble Pesan Asisten: Hasil Prompt & Analisis -->
-          <section class="output-panel chat-bubble chat-bubble-assistant" id="outputPanel" aria-label="Balasan asisten" hidden>
+          <section class="output-panel chat-bubble chat-bubble-assistant" id="outputPanel" aria-label="Hasil penyempurnaan prompt" hidden>
             <div class="assistant-message-heading">
               <span class="brand-mark tiny-mark" aria-hidden="true">P<span>+</span></span>
               <strong>Prompt Improvements</strong>
@@ -430,8 +429,8 @@
 
         <!-- Composer Box Input Chat -->
         <div class="chat-composer-box">
-          <label class="field-label composer-label sr-only" for="originalPrompt">Apa yang ingin kamu minta kepada AI? <span class="required">*</span></label>
-          <textarea id="originalPrompt" class="textarea prompt-input composer-textarea" rows="3" maxlength="60000" placeholder="Tanyakan sesuatu atau tulis tugas yang ingin kamu selesaikan..." spellcheck="true" aria-describedby="inputHint"></textarea>
+          <label class="field-label composer-label sr-only" for="originalPrompt">Prompt awal yang ingin kamu sempurnakan <span class="required">*</span></label>
+          <textarea id="originalPrompt" class="textarea prompt-input composer-textarea" rows="3" maxlength="60000" placeholder="Tempel prompt awal yang ingin kamu perjelas, lengkapi, atau optimalkan..." spellcheck="true" aria-describedby="inputHint"></textarea>
           
           <div class="composer-bottom">
             <div class="composer-tools">
