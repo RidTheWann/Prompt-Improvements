@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   LOCAL_MODEL,
+  WEBLLM_CDN_URLS,
   buildLocalPromptMessages,
+  createWebLLMLoader,
   estimateLocalInputTokens,
   improvePromptWithLocalModel,
   sanitizeLocalAnswer,
@@ -176,4 +178,53 @@ test("empty local generation is rejected for deterministic fallback", async () =
     }),
     /tidak menghasilkan prompt yang dapat dipakai/
   );
+});
+
+
+test("WebLLM loader falls back to another CDN and memoizes the successful runtime", async () => {
+  const attempts = [];
+  const runtime = { CreateMLCEngine: async () => ({}) };
+  const load = createWebLLMLoader(async (url) => {
+    attempts.push(url);
+    if (url === WEBLLM_CDN_URLS[0]) throw new TypeError("Failed to fetch");
+    return runtime;
+  });
+
+  assert.equal(await load(), runtime);
+  assert.deepEqual(attempts, WEBLLM_CDN_URLS.slice(0, 2));
+  assert.equal(await load(), runtime);
+  assert.equal(attempts.length, 2, "a successful module should be reused instead of imported again");
+});
+
+test("WebLLM loader rejects invalid CDN module exports and tries the next source", async () => {
+  const attempts = [];
+  const runtime = { CreateMLCEngine: async () => ({}) };
+  const load = createWebLLMLoader(async (url) => {
+    attempts.push(url);
+    if (url === WEBLLM_CDN_URLS[0]) return { wrongExport: true };
+    return runtime;
+  });
+
+  assert.equal(await load(), runtime);
+  assert.deepEqual(attempts, WEBLLM_CDN_URLS.slice(0, 2));
+});
+
+test("all WebLLM CDN failures report each endpoint and can be retried", async () => {
+  let attempts = 0;
+  const load = createWebLLMLoader(async (url) => {
+    attempts += 1;
+    throw new TypeError("Failed to fetch " + new URL(url).hostname);
+  });
+
+  await assert.rejects(load(), (error) => {
+    assert.match(error.message, /Semua sumber CDN gagal memuat runtime WebLLM/);
+    assert.match(error.message, /esm\\.run/);
+    assert.match(error.message, /esm\\.sh/);
+    assert.match(error.message, /cdn\\.jsdelivr\\.net/);
+    return true;
+  });
+  assert.equal(attempts, WEBLLM_CDN_URLS.length);
+
+  await assert.rejects(load(), /Semua sumber CDN gagal memuat runtime WebLLM/);
+  assert.equal(attempts, WEBLLM_CDN_URLS.length * 2, "retries must not reuse a rejected promise");
 });
