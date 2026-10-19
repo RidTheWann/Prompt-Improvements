@@ -18,7 +18,7 @@ test("local assistant answers the underlying request rather than always rewritin
   assert.equal(messages[0].role, "system");
   assert.match(messages[0].content, /RidTheWann Core/);
   assert.match(messages[0].content, /jawab permintaan pengguna secara langsung/);
-  assert.match(messages[0].content, /Jangan mengklaim bobot dasarnya dilatih sendiri/);
+  assert.match(messages[0].content, /jangan mengklaim bobot dasarnya dilatih sendiri/i);
   assert.equal(messages.at(-1).content, "Jelaskan fotosintesis secara sederhana.");
 });
 
