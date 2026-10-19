@@ -24,7 +24,7 @@ export function sanitizeLocalAnswer(value) {
     .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
     .replace(/<analysis>[\s\S]*?(?:<\/analysis>|$)/gi, "")
     .replace(/<\|(?:im_start|im_end|fim_prefix|fim_middle|fim_suffix|endoftext|assistant|user|system)\|>/gi, "")
-    .replace(/^\s*(?:final answer|answer|jawaban akhir)\s*:\s*/i, "")
+    .replace(/^\s*(?:final answer|answer|final prompt|prompt final|prompt yang disempurnakan|jawaban akhir)\s*:\s*/i, "")
     .trim();
 }
 
