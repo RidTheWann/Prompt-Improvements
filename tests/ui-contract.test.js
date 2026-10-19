@@ -107,3 +107,23 @@ test("streaming AI response provides a cancel button in the primary actions", ()
   assert.match(app, /\$\("cancelImproveButton"\)/);
   assert.match(app, /function cancelAiImprovement\(\)/);
 });
+
+
+test("the composer clears sent text while the assistant response renders like a chat message", () => {
+  assert.match(html, /id="assistantReplyIntro" class="assistant-reply-intro"/);
+  assert.match(html, /id="promptPreview" class="prompt-preview"/);
+  assert.match(html, /id="improvedPrompt"[^>]*hidden/);
+  assert.match(html, /id="editPromptButton"/);
+  assert.match(app, /function beginAssistantTurn\(originalPrompt, message\)[\s\S]*?\$\("originalPrompt"\)\.value = ""/);
+  assert.match(app, /function renderPromptPreview\(\)/);
+  assert.match(app, /function renderWebSources\(sources\)/);
+});
+
+test("OpenRouter reasoning and web search controls are persistent, explicit, and provider-aware", () => {
+  assert.match(html, /id="reasoningEffort"/);
+  assert.match(html, /id="webSearchEnabled"[^>]*checked/);
+  assert.match(html, /id="reasoningHelp"/);
+  assert.match(app, /function loadReasoningPrefs\(\)/);
+  assert.match(app, /reasoningEffort,\s*webSearch,/);
+  assert.match(app, /const supported = \$\("llmProvider"\)\.value === "openrouter"/);
+});
