@@ -6,6 +6,8 @@ const APP_SHELL = [
   "./src/app.js",
   "./src/prompt-engine.js",
   "./src/llm-client.js",
+  "./src/local-ai.js",
+  "./src/web-search.js",
   "./src/evaluation.js",
   "./src/optimizer.js",
   "./src/workspace.js",
