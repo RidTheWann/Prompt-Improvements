@@ -1,9 +1,9 @@
-const WEBLLM_CDN = "https://esm.run/@mlc-ai/web-llm@0.2.82";
+const WEBLLM_CDN = "https://esm.run/@mlc-ai/web-llm@0.2.86";
 
 export const LOCAL_MODEL = Object.freeze({
   id: "Qwen3-0.6B-q4f16_1-MLC",
   label: "Qwen3 0.6B · open-weight",
-  runtime: "WebLLM 0.2.82",
+  runtime: "WebLLM 0.2.86",
   context: 4096
 });
 
