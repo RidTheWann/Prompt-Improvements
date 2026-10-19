@@ -45,7 +45,7 @@ jobs:
         run: |
           mkdir -p dist/src
           cp index.html styles.css manifest.webmanifest icon.svg service-worker.js dist/
-          cp src/app.js src/prompt-engine.js src/llm-client.js src/evaluation.js src/optimizer.js src/workspace.js src/templates.js dist/src/
+          cp src/app.js src/prompt-engine.js src/llm-client.js src/local-ai.js src/web-search.js src/evaluation.js src/optimizer.js src/workspace.js src/templates.js dist/src/
           sed -i "s/__BUILD_ID__/${GITHUB_SHA::8}/" dist/service-worker.js
 
       - name: Upload Pages artifact

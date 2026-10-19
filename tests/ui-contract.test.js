@@ -75,15 +75,16 @@ test("initial copy and download actions are disabled until a prompt is generated
 
 test("service worker cache includes the engine and adapter modules", () => {
   assert.match(serviceWorker, /prompt-improvements-__BUILD_ID__/);
-  for (const path of ["./src/app.js", "./src/prompt-engine.js", "./src/llm-client.js", "./src/templates.js"]) {
+  for (const path of ["./src/app.js", "./src/prompt-engine.js", "./src/llm-client.js", "./src/local-ai.js", "./src/web-search.js", "./src/templates.js"]) {
     assert.ok(serviceWorker.includes('"' + path + '"'), "missing app-shell entry " + path);
   }
 });
 
 test("privacy copy differentiates local structure mode from provider AI mode", () => {
   assert.match(html, /id="privacyModeNote"/);
-  assert.match(app, /Mode gratis menyusun prompt langsung di browser/);
-  assert.match(app, /Mode AI mengirim isi prompt dan konteks ke penyedia/);
+  assert.match(app, /Mode struktur gratis menyusun prompt/);
+  assert.match(app, /Mode API mengirim isi prompt dan konteks/);
+  assert.match(app, /RidTheWann Core menjawab langsung/);
 });
 
 
@@ -106,4 +107,42 @@ test("streaming AI response provides a cancel button in the primary actions", ()
   assert.match(html, /id="cancelImproveButton"[^>]*button-danger-subtle/);
   assert.match(app, /\$\("cancelImproveButton"\)/);
   assert.match(app, /function cancelAiImprovement\(\)/);
+});
+
+
+test("the composer clears sent text while the assistant response renders like a chat message", () => {
+  assert.match(html, /id="assistantReplyIntro" class="assistant-reply-intro"/);
+  assert.match(html, /id="promptPreview" class="prompt-preview"/);
+  assert.match(html, /id="improvedPrompt"[^>]*hidden/);
+  assert.match(html, /id="editPromptButton"/);
+  assert.match(app, /function beginAssistantTurn\(originalPrompt, message\)[\s\S]*?\$\("originalPrompt"\)\.value = ""/);
+  assert.match(app, /function renderPromptPreview\(\)/);
+  assert.match(app, /function renderWebSources\(sources\)/);
+});
+
+test("OpenRouter reasoning and web search controls are persistent, explicit, and provider-aware", () => {
+  assert.match(html, /id="reasoningEffort"/);
+  assert.match(html, /id="webSearchEnabled"[^>]*checked/);
+  assert.match(html, /id="reasoningHelp"/);
+  assert.match(app, /function loadReasoningPrefs\(\)/);
+  assert.match(app, /reasoningEffort,\s*webSearch,/);
+  assert.match(app, /const openRouter = \$\("llmProvider"\)\.value === "openrouter"/);
+});
+
+
+test("RidTheWann Core is the default browser-local answer engine", () => {
+  assert.match(html, /<option value="local-ai" selected>RidTheWann Core/);
+  assert.match(html, /id="localModelPanel"/);
+  assert.match(html, /id="loadLocalModelButton"/);
+  assert.match(html, /id="conversationArchive"/);
+  assert.match(app, /async function runLocalAssistantTurn\(originalPrompt, settings\)/);
+  assert.match(app, /generateLocalAssistantReply\(/);
+  assert.match(app, /researchWebWithOpenRouter\(/);
+  assert.match(app, /searchWikipedia\(/);
+  assert.match(app, /\$\("engineMode"\)\.value === "local-ai"/);
+});
+
+test("GitHub Pages allows the pinned browser inference runtime and WebGPU workers", () => {
+  assert.match(html, /script-src[^"]*https:\/\/esm\.run[^"]*wasm-unsafe-eval/);
+  assert.match(html, /worker-src[^"]*blob:/);
 });

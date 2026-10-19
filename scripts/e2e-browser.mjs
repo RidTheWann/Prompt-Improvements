@@ -56,10 +56,18 @@ try {
   assert.equal(await page.locator("#copyButton").isDisabled(), true);
   assert.equal(await page.locator("#analyzeButton").isVisible(), false, "analysis is hidden from the beginner flow");
 
+  // This smoke flow tests the deterministic, zero-network mode. The UI now
+  // defaults to RidTheWann Core; select rules mode to keep this test offline.
+  await page.locator("#engineMode").evaluate((element) => {
+    element.value = "rules";
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
   const original = "Buat email singkat untuk mengucapkan terima kasih.";
   await page.locator("#originalPrompt").fill(original);
   await page.locator("#improveButton").click();
   await page.locator("#assistantThinking").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#originalPrompt").inputValue(), "", "submitted text must leave the composer");
   assert.equal(await page.locator("#chatUserBubble").isVisible(), true, "the request should appear in chat immediately");
   assert.equal(await page.locator("#outputPanel").isVisible(), false, "the final prompt stays hidden while generating");
   await page.waitForFunction(() => document.querySelector("#improvedPrompt").value.includes("## Permintaan asli"));
@@ -69,7 +77,13 @@ try {
   assert.equal(await page.locator("#saveButton").isDisabled(), false);
   assert.equal(await page.locator("#outputPanel").evaluate((element) => element.classList.contains("has-result")), true);
   assert.equal(await page.locator("#assistantThinking").isVisible(), false, "generation state should disappear when the result is ready");
-  console.log("[PASS] Chat message, generation status, final output state, and source fidelity");
+  assert.equal(await page.locator("#promptPreview").isVisible(), true, "the final prompt should read like an assistant message");
+  assert.equal(await page.locator("#improvedPrompt").isVisible(), false, "the editor should stay hidden until requested");
+  await page.locator("#editPromptButton").click();
+  assert.equal(await page.locator("#improvedPrompt").isVisible(), true);
+  await page.locator("#editPromptButton").click();
+  assert.equal(await page.locator("#promptPreview").isVisible(), true);
+  console.log("[PASS] Chat message, cleared composer, assistant output, edit toggle, and source fidelity");
 
   await page.locator("#copyButton").click();
   await page.waitForFunction(() => document.querySelector("#toast").textContent.includes("Prompt disalin"));
@@ -132,8 +146,10 @@ try {
   await page.locator('.history-card button[data-action="restore"]').first().click();
   await page.waitForFunction(() => document.querySelector("#cancelImproveButton").hidden);
   await page.waitForFunction(() => window.__e2eStreamCancelled >= 2);
-  assert.equal(await page.locator("#originalPrompt").inputValue(), original);
+  assert.equal(await page.locator("#originalPrompt").inputValue(), "", "restoring a version should leave the composer ready for a new message");
+  assert.equal(await page.locator("#chatUserPromptText").textContent(), original, "restored request should remain in the chat history");
   assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
+  assert.equal(await page.locator("#promptPreview").isVisible(), true);
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
 
   await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });

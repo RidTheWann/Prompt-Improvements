@@ -393,3 +393,59 @@ test("SSE [DONE] sentinel stops reading even if the provider leaves the stream o
     clearTimeout(timeout);
   }
 });
+
+
+test("OpenRouter reasoning and web search are sent as explicit controls and source links are surfaced", async () => {
+  configureConnection({ provider: "openrouter", apiKey: "or-key" });
+  const sources = [];
+  const calls = mockFetch(() => ok({
+    choices: [{
+      message: {
+        content: "Tulis prompt final",
+        annotations: [{
+          type: "url_citation",
+          url_citation: { url: "https://docs.example.dev/reference", title: "Official reference" }
+        }]
+      }
+    }]
+  }));
+  const result = await improvePromptWithAI({
+    baseUrl: "",
+    model: "reasoning-model",
+    originalPrompt: "Bantu audit API",
+    structuredDraft: "draft",
+    reasoningEffort: "high",
+    webSearch: true,
+    onSources: (items) => sources.push(...items)
+  });
+  assert.equal(result, "Tulis prompt final");
+  const body = JSON.parse(calls[0].options.body);
+  assert.deepEqual(body.reasoning, { effort: "high" });
+  assert.deepEqual(body.tools, [{
+    type: "openrouter:web_search",
+    parameters: { max_uses: 3, max_total_results: 8, search_context_size: "medium" }
+  }]);
+  assert.deepEqual(sources, [{
+    url: "https://docs.example.dev/reference",
+    title: "Official reference",
+    domain: "docs.example.dev"
+  }]);
+  assert.equal(Object.hasOwn(body, "include_reasoning"), false, "private reasoning must not be requested as a visible response field");
+  assert.equal(Object.hasOwn(body, "reasoning_details"), false, "private reasoning metadata is not surfaced as user-facing chat content");
+});
+
+test("web search cannot silently be enabled for non-OpenRouter providers", async () => {
+  configureConnection({ provider: "gemini", apiKey: "g-key" });
+  const calls = mockFetch(() => ok({}));
+  await assert.rejects(
+    improvePromptWithAI({
+      baseUrl: "",
+      model: "gemini-test",
+      originalPrompt: "Improve this",
+      structuredDraft: "draft",
+      webSearch: true
+    }),
+    /hanya tersedia melalui penyedia OpenRouter/
+  );
+  assert.equal(calls.length, 0, "unsupported web search must fail before a provider request is sent");
+});

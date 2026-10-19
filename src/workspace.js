@@ -120,9 +120,9 @@ export function validateWorkspaceBackup(value) {
   const iterationNotes = normalizeStringList(workspace.iterationNotes, "Catatan iterasi workspace", 50, 2000);
   const engine = workspace.engine;
   if (!isRecord(engine)) throw new Error("Pengaturan engine tidak lengkap.");
-  if (!["rules", "ai", "ollama"].includes(engine.mode)) throw new Error("Mode engine tidak didukung.");
+  if (!["rules", "ai", "local-ai", "ollama"].includes(engine.mode)) throw new Error("Mode engine tidak didukung.");
   const provider = PROVIDERS[engine.provider] ? engine.provider : "openrouter";
-  const mode = engine.mode === "ai" ? "ai" : "rules";
+  const mode = engine.mode === "ai" ? "ai" : engine.mode === "local-ai" ? "local-ai" : "rules";
   const model = requireString(engine.model ?? "", "Nama model", 200);
   let endpoint = "";
   if (provider === "custom" && engine.endpoint) {

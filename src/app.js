@@ -1,5 +1,7 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
-import { PROVIDERS, configureConnection, improvePromptWithAI, listModels, normalizeEndpoint, runPromptTask } from "./llm-client.js";
+import { PROVIDERS, configureConnection, improvePromptWithAI, listModels, normalizeEndpoint, runPromptTask, researchWebWithOpenRouter } from "./llm-client.js";
+import { generateLocalAssistantReply, prepareLocalModel, isLocalModelReady, LOCAL_MODEL, supportsLocalInference } from "./local-ai.js";
+import { searchWikipedia, shouldSearchWeb } from "./web-search.js";
 import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
 import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "./optimizer.js";
 import { PROMPT_TEMPLATES, getTemplate } from "./templates.js";
@@ -7,6 +9,7 @@ import { createWorkspaceBackup, parseWorkspaceBackup, MAX_WORKSPACE_FILE_CHARS }
 
 const STORAGE_KEY = "prompt-improvements.history.v1";
 const LLM_CONFIG_KEY = "prompt-improvements.llm.v1";
+const REASONING_PREFS_KEY = "prompt-improvements.reasoning.v1";
 const KEY_SESSION = "prompt-improvements.api-key.session";
 const KEY_PERSIST = "prompt-improvements.api-key.persist";
 const EVAL_CASES_KEY = "prompt-improvements.eval-cases.v1";
@@ -20,7 +23,10 @@ let lastAnalysis = null;
 let iterationNotes = [];
 let toastTimer = null;
 let llmConfig = loadLlmConfig();
+let reasoningPrefs = loadReasoningPrefs();
 let llmModels = [];
+let activePromptText = "";
+let activeWebSources = [];
 let evaluationCases = loadEvaluationCases();
 let latestEvaluationReport = null;
 let activeOptimizationController = null;
@@ -28,6 +34,7 @@ let activeAiController = null;
 let activeAiOperationId = 0;
 let activeAiInvalidationNotified = false;
 let activeGeneration = false;
+let localConversation = [];
 
 const fields = [
   "originalPrompt",
@@ -101,6 +108,24 @@ function readStoredKey() {
   return "";
 }
 
+function loadReasoningPrefs() {
+  const defaults = { effort: "medium", webSearch: true };
+  try {
+    const stored = JSON.parse(localStorage.getItem(REASONING_PREFS_KEY) || "{}");
+    const validEfforts = ["auto", "minimal", "low", "medium", "high", "xhigh"];
+    return {
+      effort: validEfforts.includes(stored.effort) ? stored.effort : defaults.effort,
+      webSearch: typeof stored.webSearch === "boolean" ? stored.webSearch : defaults.webSearch
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function saveReasoningPrefs() {
+  reasoningPrefs = { effort: $("reasoningEffort").value, webSearch: $("webSearchEnabled").checked };
+  try { localStorage.setItem(REASONING_PREFS_KEY, JSON.stringify(reasoningPrefs)); } catch { /* Optional setting. */ }
+}
 
 function endpointValue() {
   configureConnection({ provider: $("llmProvider").value, apiKey: $("llmApiKey").value });
@@ -171,23 +196,65 @@ function initializeLlmSettings() {
     $("llmModel").append(option);
     $("llmModel").value = llmConfig.model;
   }
+  $("reasoningEffort").value = reasoningPrefs.effort;
+  $("webSearchEnabled").checked = reasoningPrefs.webSearch;
   updateProviderFields();
   updateEngineLabel();
 }
 
 function updateProviderFields() {
   $("llmEndpointField").hidden = $("llmProvider").value !== "custom";
+  updateReasoningControls();
+}
+
+function updateReasoningControls() {
+  const mode = $("engineMode").value;
+  const openRouter = $("llmProvider").value === "openrouter";
+  const externalAi = mode === "ai";
+  const localAi = mode === "local-ai";
+  $("reasoningEffort").disabled = !(externalAi && openRouter);
+  $("webSearchEnabled").disabled = !(localAi || (externalAi && openRouter));
+  $("reasoningHelp").textContent = localAi
+    ? "Inferensi utama berjalan di perangkat tanpa API key. Dengan pencarian aktif, RidTheWann Core memakai web search OpenRouter jika key dan model tersedia; jika tidak, ia mencari Wikipedia. Pencarian OpenRouter bisa menggunakan kredit."
+    : openRouter && externalAi
+      ? "Reasoning internal tidak ditampilkan. Web search OpenRouter hanya dipakai bila relevan dan dapat menambah biaya selain token model."
+      : "Reasoning API dan web search penuh memerlukan OpenRouter. Mode lokal tetap bisa menjawab tanpa key dan memakai Wikipedia saat pencarian relevan.";
 }
 
 function updateEngineLabel() {
-  const useAi = $("engineMode").value === "ai";
-  $("improveButtonText").textContent = useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
-  $("privacyModeNote").textContent = useAi
-    ? "Mode AI mengirim isi prompt dan konteks ke penyedia yang kamu pilih. API key digunakan langsung dari browser; key tidak masuk ke backup. Gunakan key dengan batas pengeluaran dan hindari data sensitif."
-    : "Mode gratis menyusun prompt langsung di browser tanpa API key atau biaya token. Tidak ada permintaan AI yang dikirim sampai kamu memilih Mode AI.";
-  if (!useAi) setLlmStatus("Mode gratis aktif · tidak membutuhkan API key.");
-  else if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
-  else setLlmStatus("Untuk memakai AI, masukkan API key lalu cek koneksi.");
+  const mode = $("engineMode").value;
+  const useAi = mode === "ai";
+  const useLocal = mode === "local-ai";
+  const openRouter = $("llmProvider").value === "openrouter";
+  const webEnabled = $("webSearchEnabled").checked;
+  $("improveButtonText").textContent = useLocal ? "Kirim ke RidTheWann Core" : useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
+  $("localModelPanel").hidden = !useLocal;
+  $("analysisDetails").hidden = useLocal;
+  $("iterationDetails").hidden = useLocal;
+  $("resultHeadingTitle").textContent = useLocal ? "Jawaban dari RidTheWann Core" : "Prompt yang sudah dirapikan";
+  $("resultHeadingDescription").textContent = useLocal
+    ? "Jawaban dibuat oleh model lokal dan dapat disalin atau diedit."
+    : "Salin langsung atau edit sebelum dipakai.";
+  $("copyButtonText").textContent = useLocal ? "Salin jawaban" : "Salin prompt";
+  const editing = !$("improvedPrompt").hidden;
+  $("editPromptButton").textContent = editing ? "Selesai mengedit" : useLocal ? "Edit jawaban" : "Edit prompt";
+  $("privacyModeNote").textContent = useLocal
+    ? "RidTheWann Core menjawab langsung dengan model open-weight yang berjalan di browser. Inferensi tidak memakai API key. Model diunduh dari internet pada penggunaan pertama dan diproses di perangkat. Pencarian web opsional dapat mengirim kueri ke Wikipedia atau OpenRouter."
+    : useAi
+      ? "Mode API mengirim isi prompt dan konteks ke penyedia yang dipilih. API key hanya berada di memori halaman. " + (webEnabled && openRouter ? "Pencarian web aktif; penggunaan search dapat menambah biaya OpenRouter." : "Penyempurnaan dilakukan tanpa web search.")
+      : "Mode struktur gratis menyusun prompt dengan aturan lokal dan tidak mengirim isi prompt ke layanan luar.";
+  updateReasoningControls();
+  if (useLocal) {
+    if (isLocalModelReady()) setLlmStatus("RidTheWann Core siap · " + LOCAL_MODEL.label, "success");
+    else if (!supportsLocalInference()) setLlmStatus("Model lokal memerlukan browser dengan dukungan WebGPU.");
+    else setLlmStatus("Model lokal siap diunduh saat pertama digunakan · tanpa API key.");
+  } else if (!useAi) {
+    setLlmStatus("Mode struktur lokal aktif · tidak membutuhkan API key.");
+  } else if (llmModels.length > 0) {
+    setLlmStatus(llmModels.length + " model API tersedia.", "success");
+  } else {
+    setLlmStatus("Masukkan API key opsional lalu cek koneksi untuk memakai AI API atau web search penuh.");
+  }
 }
 
 async function checkLlmConnection() {
@@ -249,16 +316,243 @@ function cancelAiImprovement() {
   }
 }
 
-async function runSelectedEngine() {
+function mergeWebSources(...groups) {
+  const seen = new Set();
+  const merged = [];
+  for (const source of groups.flat()) {
+    if (!source || typeof source.url !== "string") continue;
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (!["http:", "https:"].includes(url.protocol) || seen.has(url.href)) continue;
+    seen.add(url.href);
+    merged.push({
+      title: String(source.title || source.domain || url.hostname).slice(0, 240),
+      domain: String(source.domain || url.hostname).slice(0, 120),
+      snippet: String(source.snippet || "").slice(0, 1400),
+      url: url.href
+    });
+    if (merged.length >= 10) return merged;
+  }
+  return merged;
+}
+
+function localModelProgress(report) {
+  const status = $("localModelStatus");
+  const message = typeof report?.text === "string" && report.text.trim()
+    ? report.text.trim()
+    : "Menyiapkan model lokal...";
+  const percent = Number(report?.progress);
+  status.textContent = Number.isFinite(percent) && percent >= 0 && percent <= 1
+    ? message.slice(0, 180) + " (" + Math.round(percent * 100) + "%)"
+    : message.slice(0, 220);
+}
+
+async function loadLocalModelFromSettings() {
+  const button = $("loadLocalModelButton");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "Menyiapkan...";
+  $("localModelStatus").textContent = "Memulai runtime lokal. Unduhan pertama dapat membutuhkan waktu.";
+  try {
+    await prepareLocalModel({ onProgress: localModelProgress });
+    $("localModelStatus").textContent = "Model siap. Inferensi berikutnya berlangsung di browser ini.";
+    setLlmStatus("RidTheWann Core siap digunakan tanpa API key.", "success");
+    showToast("Model lokal siap digunakan.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Model lokal gagal dimuat.";
+    $("localModelStatus").textContent = message;
+    setLlmStatus(message, "error");
+    showToast(message);
+  } finally {
+    button.textContent = isLocalModelReady() ? "Model siap" : previous;
+    button.disabled = isLocalModelReady();
+  }
+}
+
+function renderLocalConversationArchive() {
+  const container = $("conversationArchive");
+  if (!container) return;
+  container.replaceChildren();
+  for (let index = 0; index < localConversation.length; index += 2) {
+    const userMessage = localConversation[index];
+    const assistantMessage = localConversation[index + 1];
+    if (userMessage?.role !== "user" || assistantMessage?.role !== "assistant") continue;
+    const turn = document.createElement("article");
+    turn.className = "conversation-archive-turn";
+    const user = document.createElement("div");
+    user.className = "conversation-archive-user";
+    const userLabel = document.createElement("strong");
+    userLabel.textContent = "Kamu";
+    const userText = document.createElement("p");
+    userText.textContent = userMessage.content;
+    user.append(userLabel, userText);
+    const assistant = document.createElement("div");
+    assistant.className = "conversation-archive-assistant";
+    const assistantLabel = document.createElement("strong");
+    assistantLabel.textContent = "RidTheWann Core";
+    const assistantText = document.createElement("p");
+    assistantText.textContent = assistantMessage.content;
+    assistant.append(assistantLabel, assistantText);
+    turn.append(user, assistant);
+    container.append(turn);
+  }
+  container.hidden = container.childElementCount === 0;
+}
+
+async function runLocalAssistantTurn(originalPrompt, settings) {
+  const button = $("improveButton");
+  const cancelButton = $("cancelImproveButton");
+  const controller = new AbortController();
+  const operationId = ++activeAiOperationId;
+  let timeoutId;
+  let streamedOutput = "";
+  let sources = [];
+  let researchSummary = "";
+  let searchNote = "";
+  activeGeneration = true;
+  activeAiController = controller;
+  activeAiInvalidationNotified = false;
+  button.disabled = true;
+  cancelButton.hidden = false;
+  cancelButton.disabled = false;
+  renderLocalConversationArchive();
+  const webSearchEnabled = $("webSearchEnabled").checked;
+  const shouldSearch = webSearchEnabled && shouldSearchWeb(originalPrompt);
+  beginAssistantTurn(originalPrompt, shouldSearch
+    ? "RidTheWann Core sedang mencari konteks web dan menyiapkan model lokal..."
+    : "RidTheWann Core sedang menyiapkan model lokal...");
+  $("improveButtonText").textContent = "RidTheWann Core bekerja...";
+  $("resultStatus").textContent = "Model lokal sedang diproses";
+  $("localModelStatus").textContent = isLocalModelReady()
+    ? "Model telah dimuat; menyiapkan jawaban."
+    : "Runtime dan bobot model sedang dimuat. Unduhan pertama memerlukan koneksi internet.";
+  timeoutId = window.setTimeout(() => {
+    if (activeAiController === controller && !controller.signal.aborted) {
+      const timeoutError = new Error("Model lokal melewati batas waktu 12 menit. Periksa koneksi saat unduhan pertama atau coba ulang.");
+      timeoutError.name = "TimeoutError";
+      controller.abort(timeoutError);
+    }
+  }, 720000);
+
+  try {
+    if (shouldSearch) {
+      $("thinkingMessage").textContent = "Mencari sumber web yang relevan...";
+      let externalSearchSources = [];
+      if ($("llmProvider").value === "openrouter" && $("llmApiKey").value.trim() &&
+          $("llmModel").value.trim() && llmModels.includes($("llmModel").value.trim())) {
+        try {
+          const research = await researchWebWithOpenRouter({
+            baseUrl: endpointValue(),
+            model: $("llmModel").value.trim(),
+            query: originalPrompt,
+            reasoningEffort: $("reasoningEffort").value,
+            signal: controller.signal,
+            onSources: (items) => {
+              if (operationId !== activeAiOperationId || controller.signal.aborted) return;
+              externalSearchSources = mergeWebSources(externalSearchSources, items);
+              activeWebSources = mergeWebSources(externalSearchSources, sources);
+              renderWebSources(activeWebSources);
+              $("thinkingMessage").textContent = "Sumber web umum ditemukan. Menyiapkan jawaban lokal...";
+            }
+          });
+          researchSummary = research.text;
+          externalSearchSources = mergeWebSources(externalSearchSources, research.sources);
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          setLlmStatus("Pencarian web OpenRouter gagal; mencoba Wikipedia sebagai alternatif.", "neutral");
+        }
+      }
+      try {
+        const wikiSources = await searchWikipedia(originalPrompt, { signal: controller.signal });
+        sources = mergeWebSources(externalSearchSources, wikiSources);
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        sources = mergeWebSources(externalSearchSources);
+      }
+      if (operationId !== activeAiOperationId) return;
+      activeWebSources = sources;
+      renderWebSources(sources);
+      if (!sources.length && !researchSummary) {
+        searchNote = "Pencarian web tidak menghasilkan sumber yang dapat dipakai; fakta terbaru tidak dianggap telah diverifikasi.";
+      }
+    }
+
+    const answer = await generateLocalAssistantReply({
+      prompt: originalPrompt,
+      settings,
+      history: localConversation.slice(-6),
+      sources,
+      researchSummary,
+      searchAttempted: shouldSearch,
+      signal: controller.signal,
+      onProgress: localModelProgress,
+      onChunk: (partial) => {
+        if (operationId !== activeAiOperationId || controller.signal.aborted) return;
+        streamedOutput = partial;
+        $("thinkingMessage").textContent = "RidTheWann Core sedang menyusun jawaban...";
+      }
+    });
+    if (operationId !== activeAiOperationId) return;
+    $("improvedPrompt").value = answer;
+    localConversation.push({ role: "user", content: originalPrompt }, { role: "assistant", content: answer });
+    localConversation = localConversation.slice(-12);
+    $("assistantReplyIntro").textContent = sources.length
+      ? "Dijawab oleh RidTheWann Core dengan model lokal. Sumber web tersedia di bawah; periksa sumber untuk klaim penting."
+      : searchNote
+        ? "Jawaban model lokal tanpa sumber web terverifikasi. " + searchNote
+        : "Dijawab langsung oleh RidTheWann Core di browser; inferensi tidak memerlukan API key.";
+    $("resultStatus").textContent = "RidTheWann Core selesai";
+    $("localModelStatus").textContent = "Model siap. Jawaban diproses secara lokal.";
+    updateWordCounts();
+    revealOutputPanel();
+    setLlmStatus(sources.length
+      ? "Jawaban lokal selesai · " + sources.length + " sumber web tersedia."
+      : "Jawaban lokal selesai · " + (shouldSearch ? "pencarian tidak menghasilkan sumber yang dapat dipakai." : "tidak menggunakan pencarian web."),
+      "success");
+    showToast("RidTheWann Core selesai menjawab.");
+  } catch (error) {
+    if (operationId !== activeAiOperationId) return;
+    const isTimeout = error?.name === "TimeoutError" || controller.signal.reason?.name === "TimeoutError";
+    const isAbort = (error?.name === "AbortError" || controller.signal.aborted) && !isTimeout;
+    const message = isTimeout
+      ? "Waktu pemrosesan model lokal habis. Coba lagi setelah model selesai diunduh."
+      : error instanceof Error ? error.message : "RidTheWann Core gagal menghasilkan jawaban.";
+    const text = isAbort
+      ? streamedOutput.trim() || "Pembuatan jawaban dibatalkan. Jika model sudah diunduh, jawaban parsial dapat dicoba ulang."
+      : "RidTheWann Core belum dapat menjawab.\n\n" + message + "\n\nCoba siapkan model lokal, gunakan Struktur lokal untuk menyusun prompt, atau pilih AI via API key.";
+    $("improvedPrompt").value = text;
+    $("assistantReplyIntro").textContent = isAbort ? "Proses lokal dibatalkan." : "Model lokal tidak berhasil dijalankan.";
+    $("resultStatus").textContent = isAbort ? "Dibatalkan" : "Model lokal gagal";
+    $("localModelStatus").textContent = message;
+    updateWordCounts();
+    revealOutputPanel();
+    setLlmStatus(message, isAbort ? "neutral" : "error");
+    showToast(message);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+    if (activeAiController === controller) activeAiController = null;
+    activeGeneration = false;
+    button.disabled = false;
+    cancelButton.hidden = true;
+    cancelButton.disabled = true;
+    updateEngineLabel();
+  }
+}
+
+async function runSelectedEngine({ reuseActivePrompt = false } = {}) {
   if (activeGeneration || activeAiController) return;
 
-  const originalPrompt = currentOriginal();
+  const originalPrompt = $("originalPrompt").value.trim() || (reuseActivePrompt ? activePromptText : "");
   if (!originalPrompt) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
     return;
   }
   const settings = readSettings();
+  if ($("engineMode").value === "local-ai") {
+    await runLocalAssistantTurn(originalPrompt, settings);
+    return;
+  }
   let deterministicDraft;
   try { deterministicDraft = buildImprovedPrompt({ originalPrompt, ...settings }); }
   catch (error) {
@@ -304,7 +598,12 @@ async function runSelectedEngine() {
     return;
   }
 
-  beginAssistantTurn(originalPrompt, "Menghubungi model AI...");
+  const useOpenRouterTools = $("llmProvider").value === "openrouter";
+  const reasoningEffort = useOpenRouterTools ? $("reasoningEffort").value : "auto";
+  const webSearch = useOpenRouterTools && $("webSearchEnabled").checked;
+  beginAssistantTurn(originalPrompt, webSearch
+    ? "Menganalisis permintaan dan mencari sumber web bila diperlukan..."
+    : "Menganalisis instruksi dan menyusun prompt...");
   cancelButton.hidden = false;
   cancelButton.disabled = false;
   $("improveButtonText").textContent = "AI sedang bekerja...";
@@ -340,7 +639,20 @@ async function runSelectedEngine() {
       originalPrompt,
       structuredDraft: draftToImprove,
       settings,
+      reasoningEffort,
+      webSearch,
       signal: controller.signal,
+      onSources: (sources) => {
+        if (operationId !== activeAiOperationId || controller.signal.aborted) return;
+        const seen = new Set();
+        activeWebSources = [...activeWebSources, ...sources].filter((source) => {
+          if (!source?.url || seen.has(source.url)) return false;
+          seen.add(source.url);
+          return true;
+        }).slice(0, 10);
+        renderWebSources(activeWebSources);
+        $("thinkingMessage").textContent = "Sumber web ditemukan. Memeriksa relevansi dan merapikan prompt...";
+      },
       onChunk: (_chunk, accumulated) => {
         if (operationId !== activeAiOperationId || controller.signal.aborted) return;
         // Keep the final prompt hidden until the model finishes. Retain partial
@@ -1139,6 +1451,9 @@ function applyWorkspaceBackup(backup) {
   }
   updateWordCounts();
   updateEngineLabel();
+  activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
   $("resultStatus").textContent = "Workspace dipulihkan";
 }
 
@@ -1191,6 +1506,9 @@ function showToast(message) {
 }
 
 function beginAssistantTurn(originalPrompt, message) {
+  activePromptText = originalPrompt;
+  activeWebSources = [];
+  renderWebSources([]);
   $("assistantThinking").classList.remove("is-cancelled");
   const bubble = $("chatUserBubble");
   const bubbleText = $("chatUserPromptText");
@@ -1202,9 +1520,17 @@ function beginAssistantTurn(originalPrompt, message) {
   $("outputPanel").hidden = true;
   $("outputPanel").classList.remove("has-result");
   $("improvedPrompt").value = "";
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = $("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
+  $("assistantReplyIntro").textContent = $("engineMode").value === "local-ai"
+    ? "RidTheWann Core sedang menyiapkan jawaban lokal."
+    : "Aku sedang merapikan instruksi dan menjaga maksud awalmu.";
   $("assistantThinking").hidden = false;
   $("thinkingMessage").textContent = message;
   $("resultStatus").textContent = "Sedang diproses";
+  $("originalPrompt").value = "";
   updateWordCounts();
   window.requestAnimationFrame(() => {
     $("assistantThinking").scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1220,7 +1546,7 @@ function revealOutputPanel() {
   if (welcome) welcome.classList.add("has-conversation");
   const bubble = $("chatUserBubble");
   const bubbleText = $("chatUserPromptText");
-  const promptVal = currentOriginal();
+  const promptVal = activePromptText || currentOriginal();
   if (bubble && bubbleText && promptVal) {
     bubbleText.textContent = promptVal;
     bubble.hidden = false;
@@ -1229,12 +1555,38 @@ function revealOutputPanel() {
 }
 
 function currentOriginal() {
-  return $("originalPrompt").value.trim();
+  return activePromptText || $("originalPrompt").value.trim();
+}
+
+function renderPromptPreview() {
+  const preview = $("promptPreview");
+  if (preview) preview.textContent = $("improvedPrompt").value;
+}
+
+function renderWebSources(sources) {
+  const container = $("webSources");
+  const list = $("webSourceList");
+  if (!container || !list) return;
+  list.replaceChildren();
+  for (const source of Array.isArray(sources) ? sources : []) {
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (!["http:", "https:"].includes(url.protocol)) continue;
+    const link = document.createElement("a");
+    link.href = url.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = source.title || source.domain || url.hostname;
+    link.title = url.hostname;
+    list.append(link);
+  }
+  container.hidden = list.childElementCount === 0;
 }
 
 function updateWordCounts() {
-  const originalWords = wordCount(currentOriginal());
+  const originalWords = wordCount($("originalPrompt").value.trim());
   const output = $("improvedPrompt").value;
+  renderPromptPreview();
   $("wordCount").textContent = originalWords + " kata";
   $("inputHint").textContent = originalWords === 0
     ? "Satu kalimat sudah cukup. Detail tambahan bersifat opsional."
@@ -1321,7 +1673,7 @@ function renderAnalysis(analysis) {
 }
 
 function analyzeCurrentPrompt() {
-  const original = currentOriginal();
+  const original = $("originalPrompt").value.trim() || activePromptText;
   if (!original) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
@@ -1336,7 +1688,7 @@ function analyzeCurrentPrompt() {
 }
 
 function buildCurrentPrompt() {
-  const original = currentOriginal();
+  const original = $("originalPrompt").value.trim() || activePromptText;
   if (!original) {
     showToast("Isi prompt awal terlebih dahulu.");
     $("originalPrompt").focus();
@@ -1422,13 +1774,19 @@ async function copyPrompt() {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(value);
     } else {
-      const area = $("improvedPrompt");
-      area.focus();
+      const area = document.createElement("textarea");
+      area.value = value;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      area.style.pointerEvents = "none";
+      document.body.append(area);
       area.select();
       const copied = document.execCommand("copy");
+      area.remove();
       if (!copied) throw new Error("Clipboard unavailable");
     }
-    showToast("Prompt disalin ke clipboard.");
+    showToast($("engineMode").value === "local-ai" ? "Jawaban disalin ke clipboard." : "Prompt disalin ke clipboard.");
   } catch {
     showToast("Clipboard tidak tersedia. Pilih teks hasil lalu salin secara manual.");
   }
@@ -1536,8 +1894,17 @@ function restoreVersion(id) {
   const version = savedVersions.find((item) => item.id === id);
   if (!version) return;
   invalidateActiveAiOperation("Versi riwayat dipulihkan");
+  activePromptText = version.originalPrompt;
+  activeWebSources = [];
+  renderWebSources([]);
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = $("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
+  localConversation = [];
+  renderLocalConversationArchive();
   const settings = version.settings ?? {};
-  $("originalPrompt").value = version.originalPrompt;
+  $("originalPrompt").value = "";
   $("objective").value = settings.objective ?? "";
   $("context").value = settings.context ?? "";
   $("audience").value = settings.audience ?? "";
@@ -1561,6 +1928,15 @@ function restoreVersion(id) {
 
 function clearWorkspace() {
   invalidateActiveAiOperation("Workspace baru dibuka");
+  localConversation = [];
+  renderLocalConversationArchive();
+  activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
   for (const id of fields) {
     if (id === "outputFormat") $(id).value = "auto";
     else $(id).value = "";
@@ -1610,6 +1986,23 @@ function clearWorkspace() {
 }
 
 $("originalPrompt").addEventListener("input", updateWordCounts);
+$("reasoningEffort").addEventListener("change", () => { saveReasoningPrefs(); updateEngineLabel(); });
+$("webSearchEnabled").addEventListener("change", () => { saveReasoningPrefs(); updateEngineLabel(); });
+$("editPromptButton").addEventListener("click", () => {
+  const editing = !$("improvedPrompt").hidden;
+  $("improvedPrompt").hidden = editing;
+  $("promptPreview").hidden = !editing;
+  $("editPromptButton").textContent = editing
+    ? ($("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt")
+    : "Selesai mengedit";
+  $("editPromptButton").setAttribute("aria-pressed", String(!editing));
+  if (editing) {
+    renderPromptPreview();
+    $("promptPreview").focus();
+  } else {
+    $("improvedPrompt").focus();
+  }
+});
 $("improvedPrompt").addEventListener("input", () => {
   updateWordCounts();
   const original = currentOriginal();
@@ -1621,6 +2014,7 @@ $("improvedPrompt").addEventListener("input", () => {
 $("analyzeButton").addEventListener("click", analyzeCurrentPrompt);
 $("improveButton").addEventListener("click", runSelectedEngine);
 $("cancelImproveButton").addEventListener("click", cancelAiImprovement);
+$("loadLocalModelButton").addEventListener("click", loadLocalModelFromSettings);
 $("checkLlmButton").addEventListener("click", checkLlmConnection);
 $("addEvalCaseButton").addEventListener("click", addEvaluationCase);
 $("runEvaluationButton").addEventListener("click", runEvaluationSuite);
@@ -1685,7 +2079,7 @@ $("iterateButton").addEventListener("click", () => {
   }
   iterationNotes.push(feedback);
   $("iterationFeedback").value = "";
-  runSelectedEngine();
+  runSelectedEngine({ reuseActivePrompt: true });
 });
 $("saveButton").addEventListener("click", createVersion);
 $("copyButton").addEventListener("click", copyPrompt);
@@ -1751,6 +2145,18 @@ function applyTemplate(id) {
     $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
   }
   $("improvedPrompt").value = "";
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
+  activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
+  $("chatUserBubble").hidden = true;
+  $("chatUserPromptText").textContent = "";
+  $("outputPanel").hidden = true;
+  $("assistantThinking").hidden = true;
+  $("chatWelcome").classList.remove("has-conversation");
   iterationNotes = [];
   updateWordCounts();
   toggleComposerMenu(false);
