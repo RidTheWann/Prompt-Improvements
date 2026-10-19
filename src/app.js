@@ -1194,6 +1194,8 @@ function applyWorkspaceBackup(backup) {
   updateWordCounts();
   updateEngineLabel();
   activePromptText = "";
+  activeWebSources = [];
+  renderWebSources([]);
   $("resultStatus").textContent = "Workspace dipulihkan";
 }
 
@@ -1260,6 +1262,10 @@ function beginAssistantTurn(originalPrompt, message) {
   $("outputPanel").hidden = true;
   $("outputPanel").classList.remove("has-result");
   $("improvedPrompt").value = "";
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
   $("assistantThinking").hidden = false;
   $("thinkingMessage").textContent = message;
   $("resultStatus").textContent = "Sedang diproses";
@@ -1628,6 +1634,12 @@ function restoreVersion(id) {
   if (!version) return;
   invalidateActiveAiOperation("Versi riwayat dipulihkan");
   activePromptText = version.originalPrompt;
+  activeWebSources = [];
+  renderWebSources([]);
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
   const settings = version.settings ?? {};
   $("originalPrompt").value = "";
   $("objective").value = settings.objective ?? "";
@@ -1656,6 +1668,10 @@ function clearWorkspace() {
   activePromptText = "";
   activeWebSources = [];
   renderWebSources([]);
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
   for (const id of fields) {
     if (id === "outputFormat") $(id).value = "auto";
     else $(id).value = "";
@@ -1861,6 +1877,10 @@ function applyTemplate(id) {
     $(key).value = key === "originalPrompt" ? template.prompt : template[key] ?? (key === "outputFormat" ? "auto" : "");
   }
   $("improvedPrompt").value = "";
+  $("improvedPrompt").hidden = true;
+  $("promptPreview").hidden = false;
+  $("editPromptButton").textContent = "Edit prompt";
+  $("editPromptButton").setAttribute("aria-pressed", "false");
   activePromptText = "";
   activeWebSources = [];
   renderWebSources([]);
