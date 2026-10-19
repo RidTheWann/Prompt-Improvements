@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.run https://esm.sh 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; manifest-src 'self'; worker-src 'self' blob: https:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="theme-color" content="#101319">
   <meta name="description" content="Perjelas instruksi untuk AI. Susun prompt secara gratis di browser dengan tata letak chat yang interaktif dan ramah pengguna.">
   <title>Prompt Improvements — Buat prompt yang lebih jelas</title>
@@ -68,18 +68,27 @@
 
             <div class="ai-local-panel">
               <div class="ai-panel-heading">
-                <div><h3>Engine penyempurnaan</h3><p>Mode struktur bekerja instan di browser. Mode AI memakai API key milikmu sendiri.</p></div>
-                <span class="local-ai-tag"><span class="status-dot"></span> Opsional</span>
+                <div><h3>Engine AI</h3><p>RidTheWann Core adalah pilihan utama: model open-weight dijalankan lokal di browser. Mode struktur dan API tersedia sebagai alternatif.</p></div>
+                <span class="local-ai-tag"><span class="status-dot"></span> Local-first</span>
               </div>
               <div class="field-row ai-config-row">
                 <div class="field">
                   <label class="field-label" for="engineMode">Mode engine</label>
-                  <select id="engineMode" class="text-input"><option value="rules">Struktur lokal · instan</option><option value="ai">AI via API key</option></select>
+                  <select id="engineMode" class="text-input"><option value="local-ai" selected>RidTheWann Core · AI lokal (WebGPU)</option><option value="rules">Struktur lokal · instan</option><option value="ai">AI via API key</option></select>
                 </div>
                 <div class="field">
-                  <label class="field-label" for="llmProvider">Penyedia AI</label>
+                  <label class="field-label" for="llmProvider">Penyedia opsional</label>
                   <select id="llmProvider" class="text-input"></select>
                 </div>
+              </div>
+              <div id="localModelPanel" class="local-model-panel">
+                <div class="local-model-heading">
+                  <strong>RidTheWann Core · Qwen3 0.6B</strong>
+                  <span class="local-model-badge">Inferensi lokal</span>
+                </div>
+                <p>Jawaban dibuat di perangkat tanpa API key. Unduhan model pertama kali perlu koneksi internet dan browser WebGPU yang kompatibel.</p>
+                <p id="localModelStatus" class="ai-local-note" role="status" aria-live="polite">Model belum dimuat. Model akan diunduh saat kamu mengirim pesan pertama.</p>
+                <button id="loadLocalModelButton" class="button button-secondary" type="button">Siapkan model lokal</button>
               </div>
               <div id="llmEndpointField" class="field" hidden>
                 <label class="field-label" for="llmEndpoint">Alamat endpoint (HTTPS)</label>
@@ -173,6 +182,7 @@
 
         <!-- Timeline Percakapan Chat -->
         <div class="chat-feed" id="chatFeed">
+          <div id="conversationArchive" class="conversation-archive" hidden aria-live="polite"></div>
           <!-- Bubble Pesan Pengguna -->
           <div class="chat-bubble chat-bubble-user" id="chatUserBubble" hidden>
             <div class="bubble-header">
@@ -206,8 +216,8 @@
             <div class="result-divider"></div>
             <div class="result-heading">
               <div>
-                <h3>Prompt yang sudah dirapikan</h3>
-                <p>Salin langsung atau edit sebelum dipakai.</p>
+                <h3 id="resultHeadingTitle">Prompt yang sudah dirapikan</h3>
+                <p id="resultHeadingDescription">Salin langsung atau edit sebelum dipakai.</p>
               </div>
               <span id="resultWordCount" class="sr-only">0 kata</span>
             </div>
@@ -222,7 +232,7 @@
               <button id="editPromptButton" class="button button-quiet" type="button" aria-pressed="false">Edit prompt</button>
               <button id="copyButton" class="button button-primary" type="button" disabled>
                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="10" height="11" rx="1.5"/><path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v8A1.5 1.5 0 0 0 4.5 14H6"/></svg>
-                Salin prompt
+                <span id="copyButtonText">Salin prompt</span>
               </button>
               <button id="downloadButton" class="button button-secondary" type="button" disabled>Unduh .md</button>
               <button id="saveButton" class="button button-secondary" type="button" disabled>
