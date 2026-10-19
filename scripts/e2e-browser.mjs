@@ -109,6 +109,7 @@ try {
   await page.locator("#checkLlmButton").click();
   await page.waitForFunction(() => document.querySelector("#llmModel").value === "e2e-model");
   console.log("[PASS] AI model discovery uses the local deterministic mock");
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
 
   await page.locator("#originalPrompt").fill("Prompt lama yang harus dibatalkan.");
   await page.locator("#improveButton").click();
@@ -135,11 +136,11 @@ try {
   assert.equal((await page.locator("#improvedPrompt").inputValue()).trim(), output.trim());
   console.log("[PASS] Restoring a saved version cancels streaming without stale overwrite");
 
-  await page.locator("#sidebarToggle").click();
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
   await page.locator("#composerPlusButton").click();
   await page.locator('[data-composer-action="engine"]').click();
   await page.locator("#engineMode").selectOption("rules");
-  await page.locator("#sidebarToggle").click();
+  await page.locator("#sidebarBackdrop").click({ position: { x: 400, y: 300 } });
 
   await page.locator("#composerPlusButton").click();
   await page.locator('button[data-template="learn"]').click();
