@@ -1,6 +1,6 @@
 import { analyzePrompt, buildImprovedPrompt, createExportPayload } from "./prompt-engine.js";
 import { PROVIDERS, configureConnection, improvePromptWithAI, listModels, normalizeEndpoint, runPromptTask, researchWebWithOpenRouter } from "./llm-client.js";
-import { generateLocalAssistantReply, prepareLocalModel, isLocalModelReady, LOCAL_MODEL, supportsLocalInference } from "./local-ai.js";
+import { improvePromptWithLocalModel, prepareLocalModel, isLocalModelReady, LOCAL_MODEL, supportsLocalInference } from "./local-ai.js";
 import { searchWikipedia, shouldSearchWeb } from "./web-search.js";
 import { normalizeEvaluationCase, scoreEvaluationOutput, summarizeEvaluationRun, createEvaluationReport, serializeEvaluationReport } from "./evaluation.js";
 import { rankOptimizationCandidate, isCandidateBetter, hasMetOptimizationTarget, buildOptimizationFeedback } from "./optimizer.js";
@@ -34,7 +34,6 @@ let activeAiController = null;
 let activeAiOperationId = 0;
 let activeAiInvalidationNotified = false;
 let activeGeneration = false;
-let localConversation = [];
 
 const fields = [
   "originalPrompt",
@@ -215,7 +214,7 @@ function updateReasoningControls() {
   $("reasoningEffort").disabled = !(externalAi && openRouter);
   $("webSearchEnabled").disabled = !(localAi || (externalAi && openRouter));
   $("reasoningHelp").textContent = localAi
-    ? "Inferensi utama berjalan di perangkat tanpa API key. Dengan pencarian aktif, RidTheWann Core memakai web search OpenRouter jika key dan model tersedia; jika tidak, ia mencari Wikipedia. Pencarian OpenRouter bisa menggunakan kredit."
+    ? "Penyempurnaan prompt berjalan di perangkat tanpa API key. Pencarian opsional menggunakan OpenRouter jika key dan model tersedia; jika tidak, pencarian memakai Wikipedia. Kueri dapat dikirim ke layanan tersebut."
     : openRouter && externalAi
       ? "Reasoning internal tidak ditampilkan. Web search OpenRouter hanya dipakai bila relevan dan dapat menambah biaya selain token model."
       : "Reasoning API dan web search penuh memerlukan OpenRouter. Mode lokal tetap bisa menjawab tanpa key dan memakai Wikipedia saat pencarian relevan.";
@@ -227,36 +226,34 @@ function updateEngineLabel() {
   const useLocal = mode === "local-ai";
   const openRouter = $("llmProvider").value === "openrouter";
   const webEnabled = $("webSearchEnabled").checked;
-  $("improveButtonText").textContent = useLocal ? "Kirim ke RidTheWann Core" : useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
+  $("improveButtonText").textContent = useLocal ? "Sempurnakan prompt secara lokal" : useAi ? "Sempurnakan dengan AI" : "Buat prompt yang lebih baik";
   $("localModelPanel").hidden = !useLocal;
-  $("analysisDetails").hidden = useLocal;
-  $("iterationDetails").hidden = useLocal;
-  $("resultHeadingTitle").textContent = useLocal ? "Jawaban dari RidTheWann Core" : "Prompt yang sudah dirapikan";
+  $("analysisDetails").hidden = false;
+  $("iterationDetails").hidden = false;
+  $("resultHeadingTitle").textContent = "Prompt hasil penyempurnaan";
   $("resultHeadingDescription").textContent = useLocal
-    ? "Jawaban dibuat oleh model lokal dan dapat disalin atau diedit."
+    ? "Draf disempurnakan di browser. Tinjau hasilnya sebelum digunakan."
     : "Salin langsung atau edit sebelum dipakai.";
-  $("copyButtonText").textContent = useLocal ? "Salin jawaban" : "Salin prompt";
+  $("copyButtonText").textContent = "Salin prompt";
   const editing = !$("improvedPrompt").hidden;
-  $("editPromptButton").textContent = editing ? "Selesai mengedit" : useLocal ? "Edit jawaban" : "Edit prompt";
+  $("editPromptButton").textContent = editing ? "Selesai mengedit" : "Edit prompt";
   $("privacyModeNote").textContent = useLocal
-    ? "RidTheWann Core menjawab langsung dengan model open-weight yang berjalan di browser. Inferensi tidak memakai API key. Model diunduh dari internet pada penggunaan pertama dan diproses di perangkat. Pencarian web opsional dapat mengirim kueri ke Wikipedia atau OpenRouter."
+    ? "RidTheWann Core menyempurnakan prompt dengan model open-weight di browser tanpa API key. Unduhan pertama memerlukan internet dan WebGPU yang kompatibel. Jika model gagal dimuat, draf struktur lokal tetap tersedia. Pencarian opsional mengirim kueri ke Wikipedia atau OpenRouter."
     : useAi
       ? "Mode API mengirim isi prompt dan konteks ke penyedia yang dipilih. API key hanya berada di memori halaman. " + (webEnabled && openRouter ? "Pencarian web aktif; penggunaan search dapat menambah biaya OpenRouter." : "Penyempurnaan dilakukan tanpa web search.")
       : "Mode struktur gratis menyusun prompt dengan aturan lokal dan tidak mengirim isi prompt ke layanan luar.";
   updateReasoningControls();
   if (useLocal) {
     if (isLocalModelReady()) setLlmStatus("RidTheWann Core siap · " + LOCAL_MODEL.label, "success");
-    else if (!supportsLocalInference()) setLlmStatus("Model lokal memerlukan browser dengan dukungan WebGPU.");
-    else setLlmStatus("Model lokal siap diunduh saat pertama digunakan · tanpa API key.");
-  } else if (!useAi) {
-    setLlmStatus("Mode struktur lokal aktif · tidak membutuhkan API key.");
-  } else if (llmModels.length > 0) {
-    setLlmStatus(llmModels.length + " model API tersedia.", "success");
+    else if (!supportsLocalInference()) setLlmStatus("Model lokal memerlukan browser dengan dukungan WebGPU.", "neutral");
+    else setLlmStatus("Prompt disempurnakan lokal saat model siap; draf struktur selalu tersedia.", "neutral");
+  } else if (useAi) {
+    if (llmModels.length > 0) setLlmStatus(llmModels.length + " model tersedia.", "success");
+    else setLlmStatus("Untuk memakai AI, masukkan API key lalu cek koneksi.");
   } else {
-    setLlmStatus("Masukkan API key opsional lalu cek koneksi untuk memakai AI API atau web search penuh.");
+    setLlmStatus("Mode struktur aktif · gratis dan tidak membutuhkan API key.");
   }
 }
-
 async function checkLlmConnection() {
   const button = $("checkLlmButton");
   const previousLabel = button.textContent;
@@ -369,66 +366,32 @@ async function loadLocalModelFromSettings() {
   }
 }
 
-function renderLocalConversationArchive() {
-  const container = $("conversationArchive");
-  if (!container) return;
-  container.replaceChildren();
-  for (let index = 0; index < localConversation.length; index += 2) {
-    const userMessage = localConversation[index];
-    const assistantMessage = localConversation[index + 1];
-    if (userMessage?.role !== "user" || assistantMessage?.role !== "assistant") continue;
-    const turn = document.createElement("article");
-    turn.className = "conversation-archive-turn";
-    const user = document.createElement("div");
-    user.className = "conversation-archive-user";
-    const userLabel = document.createElement("strong");
-    userLabel.textContent = "Kamu";
-    const userText = document.createElement("p");
-    userText.textContent = userMessage.content;
-    user.append(userLabel, userText);
-    const assistant = document.createElement("div");
-    assistant.className = "conversation-archive-assistant";
-    const assistantLabel = document.createElement("strong");
-    assistantLabel.textContent = "RidTheWann Core";
-    const assistantText = document.createElement("p");
-    assistantText.textContent = assistantMessage.content;
-    assistant.append(assistantLabel, assistantText);
-    turn.append(user, assistant);
-    container.append(turn);
-  }
-  container.hidden = container.childElementCount === 0;
-}
-
-async function runLocalAssistantTurn(originalPrompt, settings) {
+async function runLocalPromptImprovement(originalPrompt, settings, structuredDraft) {
   const button = $("improveButton");
   const cancelButton = $("cancelImproveButton");
   const controller = new AbortController();
   const operationId = ++activeAiOperationId;
   let timeoutId;
-  let streamedOutput = "";
   let sources = [];
   let researchSummary = "";
-  let searchNote = "";
+  const shouldSearch = $("webSearchEnabled").checked && shouldSearchWeb(originalPrompt);
   activeGeneration = true;
   activeAiController = controller;
   activeAiInvalidationNotified = false;
   button.disabled = true;
   cancelButton.hidden = false;
   cancelButton.disabled = false;
-  renderLocalConversationArchive();
-  const webSearchEnabled = $("webSearchEnabled").checked;
-  const shouldSearch = webSearchEnabled && shouldSearchWeb(originalPrompt);
   beginAssistantTurn(originalPrompt, shouldSearch
-    ? "RidTheWann Core sedang mencari konteks web dan menyiapkan model lokal..."
-    : "RidTheWann Core sedang menyiapkan model lokal...");
-  $("improveButtonText").textContent = "RidTheWann Core bekerja...";
-  $("resultStatus").textContent = "Model lokal sedang diproses";
+    ? "Mencari referensi opsional untuk membantu menyempurnakan prompt..."
+    : "Menyiapkan model lokal untuk menyempurnakan prompt...");
+  $("improveButtonText").textContent = "Menyempurnakan prompt...";
+  $("resultStatus").textContent = "Prompt sedang disempurnakan";
   $("localModelStatus").textContent = isLocalModelReady()
-    ? "Model telah dimuat; menyiapkan jawaban."
+    ? "Model telah dimuat; menyempurnakan prompt."
     : "Runtime dan bobot model sedang dimuat. Unduhan pertama memerlukan koneksi internet.";
   timeoutId = window.setTimeout(() => {
     if (activeAiController === controller && !controller.signal.aborted) {
-      const timeoutError = new Error("Model lokal melewati batas waktu 12 menit. Periksa koneksi saat unduhan pertama atau coba ulang.");
+      const timeoutError = new Error("Model lokal melewati batas waktu 12 menit. Periksa koneksi saat unduhan pertama atau coba kembali.");
       timeoutError.name = "TimeoutError";
       controller.abort(timeoutError);
     }
@@ -436,7 +399,7 @@ async function runLocalAssistantTurn(originalPrompt, settings) {
 
   try {
     if (shouldSearch) {
-      $("thinkingMessage").textContent = "Mencari sumber web yang relevan...";
+      $("thinkingMessage").textContent = "Mencari referensi untuk konteks prompt...";
       let externalSearchSources = [];
       if ($("llmProvider").value === "openrouter" && $("llmApiKey").value.trim() &&
           $("llmModel").value.trim() && llmModels.includes($("llmModel").value.trim())) {
@@ -452,14 +415,14 @@ async function runLocalAssistantTurn(originalPrompt, settings) {
               externalSearchSources = mergeWebSources(externalSearchSources, items);
               activeWebSources = mergeWebSources(externalSearchSources, sources);
               renderWebSources(activeWebSources);
-              $("thinkingMessage").textContent = "Sumber web umum ditemukan. Menyiapkan jawaban lokal...";
+              $("thinkingMessage").textContent = "Referensi ditemukan. Menyempurnakan prompt...";
             }
           });
           researchSummary = research.text;
           externalSearchSources = mergeWebSources(externalSearchSources, research.sources);
         } catch (error) {
           if (controller.signal.aborted) throw error;
-          setLlmStatus("Pencarian web OpenRouter gagal; mencoba Wikipedia sebagai alternatif.", "neutral");
+          setLlmStatus("Pencarian OpenRouter gagal; mencoba Wikipedia sebagai alternatif.", "neutral");
         }
       }
       try {
@@ -472,62 +435,49 @@ async function runLocalAssistantTurn(originalPrompt, settings) {
       if (operationId !== activeAiOperationId) return;
       activeWebSources = sources;
       renderWebSources(sources);
-      if (!sources.length && !researchSummary) {
-        searchNote = "Pencarian web tidak menghasilkan sumber yang dapat dipakai; fakta terbaru tidak dianggap telah diverifikasi.";
-      }
     }
 
-    const answer = await generateLocalAssistantReply({
-      prompt: originalPrompt,
-      settings,
-      history: localConversation.slice(-6),
-      sources,
-      researchSummary,
+    const refinedPrompt = await improvePromptWithLocalModel({
+      originalPrompt, structuredDraft, settings, sources, researchSummary,
       searchAttempted: shouldSearch,
       signal: controller.signal,
       onProgress: localModelProgress,
-      onChunk: (partial) => {
+      onChunk: () => {
         if (operationId !== activeAiOperationId || controller.signal.aborted) return;
-        streamedOutput = partial;
-        $("thinkingMessage").textContent = "RidTheWann Core sedang menyusun jawaban...";
+        $("thinkingMessage").textContent = "Model lokal sedang menyempurnakan instruksi...";
       }
     });
     if (operationId !== activeAiOperationId) return;
-    $("improvedPrompt").value = answer;
-    localConversation.push({ role: "user", content: originalPrompt }, { role: "assistant", content: answer });
-    localConversation = localConversation.slice(-12);
-    $("assistantReplyIntro").textContent = sources.length
-      ? "Dijawab oleh RidTheWann Core dengan model lokal. Sumber web tersedia di bawah; periksa sumber untuk klaim penting."
-      : searchNote
-        ? "Jawaban model lokal tanpa sumber web terverifikasi. " + searchNote
-        : "Dijawab langsung oleh RidTheWann Core di browser; inferensi tidak memerlukan API key.";
-    $("resultStatus").textContent = "RidTheWann Core selesai";
-    $("localModelStatus").textContent = "Model siap. Jawaban diproses secara lokal.";
+    $("improvedPrompt").value = refinedPrompt;
+    renderAnalysis(analyzePrompt(originalPrompt, { ...settings, improvedPrompt: refinedPrompt }));
     updateWordCounts();
+    $("assistantReplyIntro").textContent = sources.length
+      ? "Prompt disempurnakan oleh model lokal. Referensi opsional tersedia di bawah jika relevan."
+      : "Prompt disempurnakan oleh model lokal. Tujuan dan maksud awal dipertahankan sejauh memungkinkan; periksa hasilnya sebelum digunakan.";
+    $("resultStatus").textContent = "Prompt berhasil disempurnakan";
+    $("localModelStatus").textContent = "Model siap. Prompt disempurnakan di browser.";
     revealOutputPanel();
-    setLlmStatus(sources.length
-      ? "Jawaban lokal selesai · " + sources.length + " sumber web tersedia."
-      : "Jawaban lokal selesai · " + (shouldSearch ? "pencarian tidak menghasilkan sumber yang dapat dipakai." : "tidak menggunakan pencarian web."),
-      "success");
-    showToast("RidTheWann Core selesai menjawab.");
+    setLlmStatus("Prompt berhasil disempurnakan secara lokal.", "success");
+    showToast("Prompt berhasil disempurnakan. Periksa hasilnya sebelum digunakan.");
   } catch (error) {
     if (operationId !== activeAiOperationId) return;
     const isTimeout = error?.name === "TimeoutError" || controller.signal.reason?.name === "TimeoutError";
     const isAbort = (error?.name === "AbortError" || controller.signal.aborted) && !isTimeout;
     const message = isTimeout
-      ? "Waktu pemrosesan model lokal habis. Coba lagi setelah model selesai diunduh."
-      : error instanceof Error ? error.message : "RidTheWann Core gagal menghasilkan jawaban.";
-    const text = isAbort
-      ? streamedOutput.trim() || "Pembuatan jawaban dibatalkan. Jika model sudah diunduh, jawaban parsial dapat dicoba ulang."
-      : "RidTheWann Core belum dapat menjawab.\n\n" + message + "\n\nCoba siapkan model lokal, gunakan Struktur lokal untuk menyusun prompt, atau pilih AI via API key.";
-    $("improvedPrompt").value = text;
-    $("assistantReplyIntro").textContent = isAbort ? "Proses lokal dibatalkan." : "Model lokal tidak berhasil dijalankan.";
-    $("resultStatus").textContent = isAbort ? "Dibatalkan" : "Model lokal gagal";
-    $("localModelStatus").textContent = message;
+      ? "Waktu pemrosesan model lokal habis. Coba lagi setelah memeriksa koneksi."
+      : error instanceof Error ? error.message : "Model lokal gagal menyempurnakan prompt.";
+    // Keep the actual prompt output clean; report errors in status and keep the local draft.
+    $("improvedPrompt").value = structuredDraft;
+    renderAnalysis(analyzePrompt(originalPrompt, { ...settings, improvedPrompt: structuredDraft }));
     updateWordCounts();
+    $("assistantReplyIntro").textContent = isAbort
+      ? "Proses AI dihentikan. Draf struktur lokal tetap tersedia."
+      : "Model lokal belum berhasil berjalan. Draf struktur lokal tetap tersedia untuk disalin dan digunakan.";
+    $("resultStatus").textContent = isAbort ? "Proses dihentikan · draf struktur tersedia" : "Model lokal gagal · draf struktur tersedia";
+    $("localModelStatus").textContent = message;
     revealOutputPanel();
-    setLlmStatus(message, isAbort ? "neutral" : "error");
-    showToast(message);
+    setLlmStatus(isAbort ? "Proses dihentikan; draf struktur tersedia." : "Model lokal gagal; draf struktur tersedia.", isAbort ? "neutral" : "error");
+    showToast((isAbort ? "Proses dihentikan." : "Model lokal gagal.") + " Draf struktur tetap tersedia. " + message);
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
     if (activeAiController === controller) activeAiController = null;
@@ -549,10 +499,6 @@ async function runSelectedEngine({ reuseActivePrompt = false } = {}) {
     return;
   }
   const settings = readSettings();
-  if ($("engineMode").value === "local-ai") {
-    await runLocalAssistantTurn(originalPrompt, settings);
-    return;
-  }
   let deterministicDraft;
   try { deterministicDraft = buildImprovedPrompt({ originalPrompt, ...settings }); }
   catch (error) {
@@ -561,7 +507,12 @@ async function runSelectedEngine({ reuseActivePrompt = false } = {}) {
   }
 
   const previousOutput = $("improvedPrompt").value.trim();
-  const draftToImprove = iterationNotes.length > 0 && previousOutput ? previousOutput : deterministicDraft;
+  const samePromptAsPrevious = originalPrompt === activePromptText;
+  const draftToImprove = iterationNotes.length > 0 && samePromptAsPrevious && previousOutput ? previousOutput : deterministicDraft;
+  if ($("engineMode").value === "local-ai") {
+    await runLocalPromptImprovement(originalPrompt, settings, draftToImprove);
+    return;
+  }
   const button = $("improveButton");
   const cancelButton = $("cancelImproveButton");
   const previousButtonLabel = $("improveButtonText").textContent;
@@ -1522,11 +1473,9 @@ function beginAssistantTurn(originalPrompt, message) {
   $("improvedPrompt").value = "";
   $("improvedPrompt").hidden = true;
   $("promptPreview").hidden = false;
-  $("editPromptButton").textContent = $("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt";
+  $("editPromptButton").textContent = "Edit prompt";
   $("editPromptButton").setAttribute("aria-pressed", "false");
-  $("assistantReplyIntro").textContent = $("engineMode").value === "local-ai"
-    ? "RidTheWann Core sedang menyiapkan jawaban lokal."
-    : "Aku sedang merapikan instruksi dan menjaga maksud awalmu.";
+  $("assistantReplyIntro").textContent = "Sedang menyempurnakan instruksi dan menjaga maksud awalmu.";
   $("assistantThinking").hidden = false;
   $("thinkingMessage").textContent = message;
   $("resultStatus").textContent = "Sedang diproses";
@@ -1901,8 +1850,7 @@ function restoreVersion(id) {
   $("promptPreview").hidden = false;
   $("editPromptButton").textContent = $("engineMode").value === "local-ai" ? "Edit jawaban" : "Edit prompt";
   $("editPromptButton").setAttribute("aria-pressed", "false");
-  localConversation = [];
-  renderLocalConversationArchive();
+
   const settings = version.settings ?? {};
   $("originalPrompt").value = "";
   $("objective").value = settings.objective ?? "";
@@ -1928,8 +1876,7 @@ function restoreVersion(id) {
 
 function clearWorkspace() {
   invalidateActiveAiOperation("Workspace baru dibuka");
-  localConversation = [];
-  renderLocalConversationArchive();
+
   activePromptText = "";
   activeWebSources = [];
   renderWebSources([]);
